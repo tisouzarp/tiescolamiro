@@ -1074,3 +1074,68 @@ tbody td {
   .page-content { padding: 0; }
   .card { border: 1px solid #ccc; box-shadow: none; }
 }
+
+/* ===== AUTH LOGO REAL ===== */
+.auth-logo-img-real {
+  max-width: 200px;
+  max-height: 90px;
+  object-fit: contain;
+  margin: 0 auto 14px;
+  display: block;
+}
+
+/* ===== SIDEBAR LOGO REAL ===== */
+.sidebar-logo-img {
+  width: 44px;
+  height: 36px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  flex-shrink: 0;
+}
+
+/* ===== STAT CARD CLICKABLE ===== */
+.stat-card.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+.stat-card.clickable:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+  border-color: var(--primary-mid);
+}
+.stat-arrow {
+  font-size: 18px;
+  color: var(--gray-300);
+  transition: var(--transition);
+}
+.stat-card.clickable:hover .stat-arrow {
+  color: var(--primary);
+  transform: translateX(3px);
+}
+
+/* ===== CALENDAR ===== */
+.cal-day {
+  transition: background var(--transition);
+}
+.cal-day:hover {
+  background: var(--primary-light) !important;
+}
+.cal-day.today {
+  background: var(--gray-50);
+}
+.cal-event {
+  background: var(--primary);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== MISSING UTILS ===== */
+.mb-20 { margin-bottom: 20px; }
+.mt-16 { margin-top: 16px; }
