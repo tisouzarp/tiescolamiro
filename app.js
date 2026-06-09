@@ -110,12 +110,12 @@ function renderAuth() {
     <div class="auth-card">
       <div class="auth-logo">
         <img src="logo.png" alt="Escola Miró" class="auth-logo-img-real" onerror="this.style.display='none'">
-        <h1>TI — Escola Miró</h1>
+        <h1>TI - Escola Miró</h1>
         <p>Sistema de Chamados e Reservas</p>
       </div>
       <div class="form-group">
         <label>Usuário</label>
-        <div class="input-icon"><i class="ti ti-user"></i><input id="login-user" type="text" placeholder="seu.usuario" /></div>
+        <div class="input-icon"><i class="ti ti-user"></i><input id="login-user" type="text" placeholder="Seu Usuário" /></div>
       </div>
       <div class="form-group">
         <label>Senha</label>
@@ -123,8 +123,11 @@ function renderAuth() {
       </div>
       <button class="btn btn-primary btn-full" id="btn-login"><i class="ti ti-login"></i> Entrar no sistema</button>
       <p style="text-align:center;margin-top:20px;font-size:12px;color:var(--gray-400)">
-        Problemas de acesso? Fale com o TI:<br><strong>Tiago Souza</strong>
+        Problemas de acesso? Fale com setor de TI:<br><strong>Tiago Souza</strong>
       </p>
+      <div class="auth-copyright">
+        Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.
+      </div>
     </div>
   </div>`;
 }
@@ -157,8 +160,8 @@ function renderLayout() {
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="sidebar-logo">
-          <img src="logo.png" alt="Miró" class="sidebar-logo-img" onerror="this.outerHTML='<div class=\'sidebar-logo-icon\'><i class=\'ti ti-device-desktop\'></i></div>'">
-          <div class="sidebar-logo-text"><h2>TI — Escola Miró</h2><span>Tiago Souza</span></div>
+          <img src="logo.png" alt="Miró" class="sidebar-logo-img" onerror="this.style.display='none'">
+          <div class="sidebar-logo-text"><h2>TI - Escola Miró</h2><span>Tiago Souza</span></div>
         </div>
       </div>
       <div class="sidebar-user">
@@ -215,6 +218,9 @@ function renderLayout() {
         </div>
       </header>
       <main class="page-content" id="page-content"></main>
+      <footer class="main-footer">
+        Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.
+      </footer>
     </div>
   </div>`;
 }
