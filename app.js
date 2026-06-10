@@ -186,8 +186,38 @@ function renderLayout() {
           ${licVencendo>0?`<span class="nav-badge" style="background:var(--warning)">${licVencendo}</span>`:''}
         </button>
         <span class="nav-section-title">Unidades</span>
-        <button class="nav-item ${STATE.currentPage==='matriz'?'active':''}" data-page="matriz"><i class="ti ti-building-school"></i> Matriz</button>
-        <button class="nav-item ${STATE.currentPage==='ensinomedio'?'active':''}" data-page="ensinomedio"><i class="ti ti-building"></i> Ensino Médio</button>
+
+        <!-- MATRIZ SUBMENU -->
+        <button class="nav-item nav-group-toggle ${['matriz','mz-reservas','mz-chamados','mz-equipamentos','mz-licencas','mz-usuarios','mz-relatorios'].includes(STATE.currentPage)?'active':''}" onclick="toggleNavGroup('grupo-matriz')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-4a3 3 0 0 1 6 0v4"/><rect x="9" y="10" width="2" height="3"/><rect x="13" y="10" width="2" height="3"/></svg>
+          Matriz
+          <i class="ti ti-chevron-down nav-chevron" style="margin-left:auto;font-size:13px;transition:.2s"></i>
+        </button>
+        <div id="grupo-matriz" class="nav-group" style="display:${['matriz','mz-reservas','mz-chamados','mz-equipamentos','mz-licencas','mz-usuarios','mz-relatorios'].includes(STATE.currentPage)?'block':'none'}">
+          <button class="nav-item nav-sub ${STATE.currentPage==='matriz'?'active':''}" data-page="matriz"><i class="ti ti-layout-dashboard"></i> Visão Geral</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-reservas'?'active':''}" data-page="mz-reservas"><i class="ti ti-calendar-event"></i> Reservas</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-chamados'?'active':''}" data-page="mz-chamados"><i class="ti ti-headset"></i> Chamados</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-equipamentos'?'active':''}" data-page="mz-equipamentos"><i class="ti ti-devices"></i> Equipamentos</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-licencas'?'active':''}" data-page="mz-licencas"><i class="ti ti-license"></i> Licenças</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-usuarios'?'active':''}" data-page="mz-usuarios"><i class="ti ti-users"></i> Usuários</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-relatorios'?'active':''}" data-page="mz-relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
+        </div>
+
+        <!-- ENSINO MÉDIO SUBMENU -->
+        <button class="nav-item nav-group-toggle ${['ensinomedio','em-reservas','em-chamados','em-equipamentos','em-licencas','em-usuarios','em-relatorios'].includes(STATE.currentPage)?'active':''}" onclick="toggleNavGroup('grupo-em')">
+          <i class="ti ti-building"></i>
+          Ensino Médio
+          <i class="ti ti-chevron-down nav-chevron" style="margin-left:auto;font-size:13px;transition:.2s"></i>
+        </button>
+        <div id="grupo-em" class="nav-group" style="display:${['ensinomedio','em-reservas','em-chamados','em-equipamentos','em-licencas','em-usuarios','em-relatorios'].includes(STATE.currentPage)?'block':'none'}">
+          <button class="nav-item nav-sub ${STATE.currentPage==='ensinomedio'?'active':''}" data-page="ensinomedio"><i class="ti ti-layout-dashboard"></i> Visão Geral</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-reservas'?'active':''}" data-page="em-reservas"><i class="ti ti-calendar-event"></i> Reservas</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-chamados'?'active':''}" data-page="em-chamados"><i class="ti ti-headset"></i> Chamados</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-equipamentos'?'active':''}" data-page="em-equipamentos"><i class="ti ti-devices"></i> Equipamentos</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-licencas'?'active':''}" data-page="em-licencas"><i class="ti ti-license"></i> Licenças</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-usuarios'?'active':''}" data-page="em-usuarios"><i class="ti ti-users"></i> Usuários</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-relatorios'?'active':''}" data-page="em-relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
+        </div>
         <span class="nav-section-title">Administração</span>
         <button class="nav-item ${STATE.currentPage==='equipamentos'?'active':''}" data-page="equipamentos"><i class="ti ti-devices"></i> Equipamentos</button>
         <button class="nav-item ${STATE.currentPage==='usuarios'?'active':''}" data-page="usuarios"><i class="ti ti-users"></i> Usuários</button>
@@ -238,7 +268,11 @@ function attachLayoutEvents() {
     else if (['chamados','novoChamado'].includes(p)) openModalChamado();
     else if (p==='inventario') openModalInventario();
     else if (p==='licencas') openModalLicenca();
-    else if (p==='equipamentos'||p==='matriz'||p==='ensinomedio') openModalEquipamento();
+    else if (p==='equipamentos'||p==='matriz'||p==='ensinomedio'||p==='mz-equipamentos'||p==='em-equipamentos') openModalEquipamento(p.startsWith('em-')?'Ensino Médio':'Matriz');
+    else if (p==='mz-chamados'||p==='em-chamados') openModalChamado();
+    else if (p==='mz-reservas'||p==='em-reservas') openModalReserva();
+    else if (p==='mz-licencas'||p==='em-licencas') openModalLicenca();
+    else if (p==='mz-usuarios'||p==='em-usuarios') openModalUsuario();
     else if (p==='usuarios') openModalUsuario();
     else openModalReserva();
   });
@@ -246,7 +280,7 @@ function attachLayoutEvents() {
 
 function navigateTo(page) {
   STATE.currentPage = page;
-  const titles = { dashboard:'Dashboard', calendario:'Calendário', reservas:'Reservas', chamados:'Chamados', arquivados:'Arquivados', inventario:'Inventário TI', licencas:'Licenças de Software', matriz:'Matriz — Equipamentos', ensinomedio:'Ensino Médio — Equipamentos', equipamentos:'Equipamentos', usuarios:'Usuários', relatorios:'Relatórios & Gráficos', novaReserva:'Nova Reserva', novoChamado:'Abrir Chamado', meuschamados:'Meus Chamados' };
+  const titles = { dashboard:'Dashboard', calendario:'Calendário', reservas:'Reservas', chamados:'Chamados', arquivados:'Arquivados', inventario:'Inventário TI', licencas:'Licenças de Software', matriz:'Matriz — Visão Geral', ensinomedio:'Ensino Médio — Visão Geral', equipamentos:'Equipamentos', usuarios:'Usuários', relatorios:'Relatórios & Gráficos', novaReserva:'Nova Reserva', novoChamado:'Abrir Chamado', meuschamados:'Meus Chamados', 'mz-reservas':'Matriz — Reservas', 'mz-chamados':'Matriz — Chamados', 'mz-equipamentos':'Matriz — Equipamentos', 'mz-licencas':'Matriz — Licenças', 'mz-usuarios':'Matriz — Usuários', 'mz-relatorios':'Matriz — Relatórios', 'em-reservas':'Ensino Médio — Reservas', 'em-chamados':'Ensino Médio — Chamados', 'em-equipamentos':'Ensino Médio — Equipamentos', 'em-licencas':'Ensino Médio — Licenças', 'em-usuarios':'Ensino Médio — Usuários', 'em-relatorios':'Ensino Médio — Relatórios' };
   const titleEl = $('#page-title');
   if (titleEl) titleEl.textContent = titles[page] || page;
   $$('.nav-item[data-page]').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
@@ -256,7 +290,20 @@ function navigateTo(page) {
 function renderPage(page) {
   const content = $('#page-content');
   if (!content) return;
-  const pages = { dashboard, calendario, reservas, chamados, arquivados, inventario, licencas, matriz, ensinomedio, equipamentos, usuarios, relatorios, novaReserva, novoChamado, meuschamados };
+  const pages = { dashboard, calendario, reservas, chamados, arquivados, inventario, licencas, matriz, ensinomedio, equipamentos, usuarios, relatorios, novaReserva, novoChamado, meuschamados,
+    'mz-reservas': ()=>paginaUnidade('reservas','Matriz'),
+    'mz-chamados': ()=>paginaUnidade('chamados','Matriz'),
+    'mz-equipamentos': ()=>paginaUnidade('equipamentos','Matriz'),
+    'mz-licencas': ()=>paginaUnidade('licencas','Matriz'),
+    'mz-usuarios': ()=>paginaUnidade('usuarios','Matriz'),
+    'mz-relatorios': ()=>paginaUnidade('relatorios','Matriz'),
+    'em-reservas': ()=>paginaUnidade('reservas','Ensino Médio'),
+    'em-chamados': ()=>paginaUnidade('chamados','Ensino Médio'),
+    'em-equipamentos': ()=>paginaUnidade('equipamentos','Ensino Médio'),
+    'em-licencas': ()=>paginaUnidade('licencas','Ensino Médio'),
+    'em-usuarios': ()=>paginaUnidade('usuarios','Ensino Médio'),
+    'em-relatorios': ()=>paginaUnidade('relatorios','Ensino Médio'),
+  };
   content.innerHTML = pages[page] ? pages[page]() : '<p>Página não encontrada.</p>';
   attachPageEvents(page);
 }
@@ -272,6 +319,10 @@ function attachPageEvents(page) {
   if (page==='calendario') renderCalendario();
   if (page==='matriz') attachUnidadeFilter('Matriz');
   if (page==='ensinomedio') attachUnidadeFilter('Ensino Médio');
+  if (page==='mz-equipamentos') attachUnidadeEquipFilter('Matriz');
+  if (page==='em-equipamentos') attachUnidadeEquipFilter('Ensino Médio');
+  if (page==='mz-relatorios') setTimeout(()=>renderUnidadeCharts('Matriz'),200);
+  if (page==='em-relatorios') setTimeout(()=>renderUnidadeCharts('Ensino Médio'),200);
 }
 
 function attachTableFilter(searchId, filterId, tbodyId, getFn) {
@@ -805,7 +856,7 @@ function equipamentos() {
   </div>
   <div class="card">
     <div class="card-header"><span class="card-title"><i class="ti ti-devices"></i> Todos os Equipamentos (${STATE.equipamentos.length})</span></div>
-    <div class="table-wrapper"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Patrimônio</th><th>Marca/Modelo</th><th>Local</th><th>Unidade</th><th>Status</th><th>Ações</th></tr></thead>
+    <div class="table-wrapper"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Patrimônio</th><th>Marca/Modelo</th><th>Local</th><th>Unidade</th><th>Qtd</th><th>Status</th><th>Ações</th></tr></thead>
     <tbody id="equip-tbody">${renderEquipRows(STATE.equipamentos)}</tbody></table></div>
   </div>`;
 }
@@ -813,11 +864,12 @@ function equipamentos() {
 function equipStatus(s){ const m={disponivel:'badge-fechado',reservado:'badge-reservado',manutencao:'badge-andamento',inativo:'badge-suspenso'}; const l={disponivel:'Disponível',reservado:'Reservado',manutencao:'Manutenção',inativo:'Inativo'}; return `<span class="badge ${m[s]||'badge-cancelado'}">${l[s]||s}</span>`; }
 
 function renderEquipRows(list) {
-  if(!list.length) return `<tr><td colspan="8"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>`;
+  if(!list.length) return `<tr><td colspan="9"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>`;
   return list.map(e=>`<tr>
     <td><strong>${e.nome}</strong></td><td>${e.tipo}</td>
     <td><code style="background:var(--gray-100);padding:2px 6px;border-radius:4px;font-size:12px">${e.patrimonio}</code></td>
     <td>${e.marca||'—'} ${e.modelo||''}</td><td>${e.local||'—'}</td><td>${e.unidade}</td>
+    <td><strong>${e.quantidade||1}</strong></td>
     <td>${equipStatus(e.status)}</td>
     <td><div style="display:flex;gap:4px">
       <button class="btn-icon" onclick="editEquipamento(${e.id})" title="Editar"><i class="ti ti-edit"></i></button>
@@ -1232,7 +1284,22 @@ function openModalEquipamento(unidadeFixa=null, equipId=null) {
         <div class="form-group"><label class="required">Unidade</label><select id="eq-unidade"><option value="Matriz" ${!e&&unidadeFixa!=='Ensino Médio'?'selected':e?.unidade==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${unidadeFixa==='Ensino Médio'||e?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option></select></div>
         <div class="form-group"><label>Status</label><select id="eq-status">${['disponivel','reservado','manutencao','inativo'].map(s=>`<option value="${s}" ${e?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
       </div>
-      <div class="form-group"><label>Descrição / Especificações</label><input type="text" id="eq-desc" value="${e?.descricao||''}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Quantidade</label>
+          <div class="qty-control">
+            <button class="qty-btn" type="button" onclick="changeQtyEq(-1)">−</button>
+            <input class="qty-value" type="number" id="eq-qtd" value="${e?.quantidade||1}" min="1" max="999"/>
+            <button class="qty-btn" type="button" onclick="changeQtyEq(1)">+</button>
+          </div>
+        </div>
+        <div class="form-group"><label>Descrição / Especificações</label><input type="text" id="eq-desc" value="${e?.descricao||''}"/></div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="eq-add-inv" ${!e?'checked':''} style="width:16px;height:16px;accent-color:var(--primary)">
+          <span>Adicionar automaticamente ao <strong>Inventário TI</strong></span>
+        </label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -1241,12 +1308,29 @@ function openModalEquipamento(unidadeFixa=null, equipId=null) {
   </div>`);
 }
 function editEquipamento(id){ openModalEquipamento(null, id); }
+function changeQtyEq(d){ const i=$('#eq-qtd'); if(i) i.value=Math.max(1,Math.min(999,parseInt(i.value)+d)); }
+
 function salvarEquipamento(id) {
   const nome=$('#eq-nome')?.value.trim(), tipo=$('#eq-tipo')?.value, pat=$('#eq-pat')?.value.trim();
   if(!nome||!tipo||!pat){ toast('Preencha nome, tipo e patrimônio.','error'); return; }
-  const data={ nome, tipo, patrimonio:pat, marca:$('#eq-marca')?.value, modelo:$('#eq-modelo')?.value, serie:$('#eq-serie')?.value, local:$('#eq-local')?.value, unidade:$('#eq-unidade')?.value||'Matriz', status:$('#eq-status')?.value||'disponivel', descricao:$('#eq-desc')?.value };
-  if(id){ const e=STATE.equipamentos.find(e=>e.id===id); if(e) Object.assign(e,data); toast('Equipamento atualizado!'); }
-  else { STATE.equipamentos.push({id:STATE.nextId.equipamento++,...data}); toast('Equipamento cadastrado!'); }
+  const qtd=parseInt($('#eq-qtd')?.value)||1;
+  const addInv=$('#eq-add-inv')?.checked;
+  const data={ nome, tipo, patrimonio:pat, marca:$('#eq-marca')?.value||'', modelo:$('#eq-modelo')?.value||'', serie:$('#eq-serie')?.value||'', local:$('#eq-local')?.value||'', unidade:$('#eq-unidade')?.value||'Matriz', status:$('#eq-status')?.value||'disponivel', descricao:$('#eq-desc')?.value||'', quantidade:qtd };
+  if(id){
+    const e=STATE.equipamentos.find(e=>e.id===id); if(e) Object.assign(e,data);
+    // sync inventario if exists
+    const inv=STATE.inventario.find(i=>i.patrimonio===pat);
+    if(inv) Object.assign(inv,{ nome, marca:data.marca, modelo:data.modelo, serie:data.serie, local:data.local, unidade:data.unidade, status:data.status==='disponivel'?'ativo':data.status, quantidade:qtd });
+    toast('Equipamento atualizado!');
+  } else {
+    STATE.equipamentos.push({id:STATE.nextId.equipamento++,...data});
+    if(addInv){
+      STATE.inventario.push({ id:STATE.nextId.inventario++, nome, categoria:tipo, tipo, marca:data.marca, modelo:data.modelo, patrimonio:pat, serie:data.serie, ip:'', local:data.local, unidade:data.unidade, garantia:'', status:'ativo', obs:data.descricao, quantidade:qtd });
+      toast('Equipamento cadastrado e adicionado ao Inventário!');
+    } else {
+      toast('Equipamento cadastrado!');
+    }
+  }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
 function deleteEquipamento(id){ if(!confirm('Excluir este equipamento?')) return; STATE.equipamentos=STATE.equipamentos.filter(e=>e.id!==id); saveState(); renderPage(STATE.currentPage); toast('Excluído.','info'); }
@@ -1304,6 +1388,137 @@ function toggleMenu(btn) {
   const m=btn.nextElementSibling; m.style.display=m.style.display==='none'?'':'none';
   if(m.style.display!=='none') setTimeout(()=>document.addEventListener('click',()=>m.style.display='none',{once:true}),10);
 }
+
+// ===== NAV GROUP TOGGLE =====
+function toggleNavGroup(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  const btn = el.previousElementSibling;
+  if (btn) {
+    const chevron = btn.querySelector('.nav-chevron');
+    if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+  }
+}
+
+// ===== PAGINA UNIDADE (filtrada por unidade) =====
+function paginaUnidade(tipo, unidade) {
+  const uni = unidade;
+  const uSlug = unidade === 'Matriz' ? 'mz' : 'em';
+  if (tipo === 'reservas') {
+    const list = STATE.reservas.filter(r=>(r.unidade||'Matriz')===uni && r.status!=='fechado'&&r.status!=='cancelado');
+    return `
+    <div class="filter-bar">
+      <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar reserva..." id="search-uni-res"/></div>
+      <select class="filter-select" id="filter-uni-res-st"><option value="">Todos</option><option value="ativo">Ativo</option><option value="suspenso">Suspenso</option></select>
+      <button class="btn btn-primary" onclick="openModalReservaUnidade('${uni}')"><i class="ti ti-plus"></i> Nova Reserva</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-calendar-event"></i> Reservas — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>Equipamento</th><th>Solicitante</th><th>Cargo</th><th>Sala</th><th>Data</th><th>Horário</th><th>Qtd</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody>${renderReservasRows(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'chamados') {
+    const list = STATE.chamados.filter(c=>(c.unidade||'Matriz')===uni && c.status!=='fechado'&&c.status!=='cancelado');
+    return `
+    <div class="filter-bar">
+      <button class="btn btn-primary" onclick="openModalChamadoUnidade('${uni}')"><i class="ti ti-plus"></i> Novo Chamado</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-headset"></i> Chamados — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>#</th><th>Título</th><th>Categoria</th><th>Prioridade</th><th>Solicitante</th><th>Status</th><th>Criado</th><th>Ações</th></tr></thead>
+      <tbody>${renderChamadosRows(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'equipamentos') {
+    const list = STATE.equipamentos.filter(e=>e.unidade===uni);
+    return `
+    <div class="filter-bar">
+      <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar equipamento..." id="search-uni-eq"/></div>
+      <button class="btn btn-primary" onclick="openModalEquipamento('${uni}')"><i class="ti ti-plus"></i> Novo Equipamento</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-devices"></i> Equipamentos — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Patrimônio</th><th>Quantidade</th><th>Local</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody id="uni-eq-tbody">${renderUnidadeEquipsQtd(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'licencas') {
+    const list = STATE.licencas.filter(l=>l.unidade===uni);
+    return `
+    <div class="filter-bar">
+      <button class="btn btn-primary" onclick="openModalLicenca()"><i class="ti ti-plus"></i> Nova Licença</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>Software</th><th>Fornecedor</th><th>Qtd</th><th>Vencimento</th><th>Dias Restantes</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody>${renderLicRows(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'usuarios') {
+    const list = STATE.users.filter(u=>u.unidade===uni);
+    return `
+    <div class="filter-bar">
+      <button class="btn btn-primary" onclick="openModalUsuario()"><i class="ti ti-user-plus"></i> Novo Usuário</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-users"></i> Usuários — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>Usuário</th><th>E-mail</th><th>Login</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody>${renderUserRows(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'relatorios') {
+    return `
+    <div class="grid-2 mb-20">
+      <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-line"></i> Chamados por Mês — ${uni}</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-uni-mensal"></canvas></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-pie"></i> Chamados por Prioridade</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-uni-prio"></canvas></div></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-table"></i> Chamados — ${uni}</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>#</th><th>Título</th><th>Categoria</th><th>Prioridade</th><th>Solicitante</th><th>Status</th><th>Criado</th></tr></thead>
+      <tbody>${STATE.chamados.filter(c=>c.unidade===uni).map(c=>`<tr><td>#${c.id}</td><td>${c.titulo}</td><td>${c.categoria}</td><td><span style="color:${prioColor(c.prioridade)};font-weight:700">${c.prioridade}</span></td><td>${c.solicitante}</td><td><span class="badge badge-${c.status}">${c.status}</span></td><td>${formatDate(c.criado)}</td></tr>`).join('')}</tbody></table></div>
+    </div>`;
+  }
+  return '<p>Seção em desenvolvimento.</p>';
+}
+
+function renderUnidadeEquipsQtd(list) {
+  if(!list.length) return '<tr><td colspan="7"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>';
+  return list.map(e=>`<tr>
+    <td><strong>${e.nome}</strong></td><td>${e.tipo}</td>
+    <td><code style="background:var(--gray-100);padding:2px 6px;border-radius:4px;font-size:12px">${e.patrimonio}</code></td>
+    <td><span class="badge badge-reservado" style="font-size:13px">${e.quantidade||1}</span></td>
+    <td>${e.local||'—'}</td>
+    <td>${equipStatus(e.status)}</td>
+    <td><div style="display:flex;gap:4px">
+      <button class="btn-icon" onclick="editEquipamento(${e.id})" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-icon" onclick="deleteEquipamento(${e.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+
+function attachUnidadeEquipFilter(unidade) {
+  const s=$('#search-uni-eq');
+  if(s) s.addEventListener('input',()=>{
+    const q=s.value.toLowerCase();
+    const f=STATE.equipamentos.filter(e=>e.unidade===unidade&&(!q||e.nome.toLowerCase().includes(q)));
+    const tb=$('#uni-eq-tbody'); if(tb) tb.innerHTML=renderUnidadeEquipsQtd(f);
+  });
+}
+
+function renderUnidadeCharts(unidade) {
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const ctx1=document.getElementById('chart-uni-mensal');
+  if(ctx1) new Chart(ctx1,{type:'bar',data:{labels:meses,datasets:[{label:'Chamados',data:meses.map(()=>Math.floor(Math.random()*5)+1),backgroundColor:'#0073c8',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  const ctx2=document.getElementById('chart-uni-prio');
+  const ch=STATE.chamados.filter(c=>c.unidade===unidade);
+  if(ctx2) new Chart(ctx2,{type:'doughnut',data:{labels:['Alta','Média','Baixa'],datasets:[{data:[ch.filter(c=>c.prioridade==='Alta').length,ch.filter(c=>c.prioridade==='Media').length,ch.filter(c=>c.prioridade==='Baixa').length],backgroundColor:['#e74c3c','#e67e22','#27ae60'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+}
+
+function openModalReservaUnidade(unidade) { openModalReserva(null, null, unidade); }
+function openModalChamadoUnidade(unidade) { openModalChamado(null, unidade); }
 
 // ===== INIT =====
 loadState();

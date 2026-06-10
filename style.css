@@ -1174,3 +1174,48 @@ tbody td {
   border-radius: 6px;
   padding: 3px;
 }
+
+/* ===== NAV GRUPOS EXPANSÍVEIS ===== */
+.nav-group-toggle {
+  position: relative;
+}
+.nav-group-toggle .nav-chevron {
+  margin-left: auto;
+  font-size: 13px;
+  transition: transform .2s ease;
+  flex-shrink: 0;
+}
+
+.nav-group {
+  overflow: hidden;
+  background: rgba(0,0,0,.12);
+  border-left: 3px solid var(--primary);
+  margin-left: 0;
+  animation: groupOpen .2s ease;
+}
+
+@keyframes groupOpen {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.nav-item.nav-sub {
+  padding-left: 38px;
+  font-size: 12.5px;
+  color: rgba(255,255,255,.5);
+  border-left: none;
+}
+
+.nav-item.nav-sub:hover {
+  color: white;
+  background: rgba(255,255,255,.06);
+}
+
+.nav-item.nav-sub.active {
+  color: white;
+  background: rgba(0,115,200,.3);
+}
+
+.nav-item.nav-sub i {
+  font-size: 15px;
+}
