@@ -1219,3 +1219,88 @@ tbody td {
 .nav-item.nav-sub i {
   font-size: 15px;
 }
+
+/* ===== AUTH CARD COMPACT ===== */
+.auth-card-compact {
+  padding: 32px 36px;
+  max-width: 400px;
+}
+.auth-card-compact .auth-logo-img-real {
+  max-height: 70px;
+  margin-bottom: 10px;
+}
+.auth-card-compact h1 {
+  font-size: 19px;
+}
+
+/* ===== COPYRIGHT COLOR BLACK ===== */
+.auth-copyright {
+  color: #1e293b !important;
+  font-weight: 600;
+}
+.main-footer {
+  color: #1e293b !important;
+  font-weight: 600;
+}
+
+/* ===== AUTOCOMPLETE ===== */
+.autocomplete-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1.5px solid var(--primary-mid);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 500;
+  overflow: hidden;
+  animation: dropDown .15s ease;
+}
+
+.autocomplete-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  cursor: pointer;
+  transition: background var(--transition);
+  border-bottom: 1px solid var(--gray-50);
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover { background: var(--primary-light); }
+
+.autocomplete-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ===== PRINT STYLES ===== */
+@media print {
+  .sidebar, .main-header, .no-print, .filter-bar, .report-filters { display: none !important; }
+  .main-content { margin-left: 0 !important; }
+  .page-content { padding: 0 !important; }
+  .print-header { display: block !important; margin-bottom: 20px; }
+  .print-header h2 { font-size: 18px; color: #000; }
+  .card { border: 1px solid #ccc; box-shadow: none; break-inside: avoid; }
+  .card-header { background: #f0f0f0 !important; }
+  table { font-size: 11px; }
+  th, td { padding: 6px 8px !important; }
+  .badge { border: 1px solid #ccc; background: transparent !important; color: #000 !important; }
+  .main-footer { display: block !important; border-top: 1px solid #ccc; margin-top: 20px; }
+}
+
+/* ===== RELATORIO TABS AREA ===== */
+.report-filters .filter-select[id="rel-tipo"] {
+  font-weight: 700;
+  color: var(--primary);
+}

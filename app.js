@@ -73,12 +73,22 @@ function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
 
 // ===== PERSISTENCE =====
 function saveState() {
-  try { localStorage.setItem('miro_ti_v2', JSON.stringify({ reservas:STATE.reservas, chamados:STATE.chamados, equipamentos:STATE.equipamentos, users:STATE.users, inventario:STATE.inventario, licencas:STATE.licencas, nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30) })); } catch(e) {}
+  try {
+    localStorage.setItem('miro_ti_v2', JSON.stringify({ reservas:STATE.reservas, chamados:STATE.chamados, equipamentos:STATE.equipamentos, users:STATE.users, inventario:STATE.inventario, licencas:STATE.licencas, nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30) }));
+    if (STATE.currentUser) localStorage.setItem('miro_ti_session', JSON.stringify({ userId: STATE.currentUser.id, page: STATE.currentPage }));
+    else localStorage.removeItem('miro_ti_session');
+  } catch(e) {}
 }
 function loadState() {
   try {
     const s = localStorage.getItem('miro_ti_v2');
     if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
+    const sess = localStorage.getItem('miro_ti_session');
+    if (sess) {
+      const { userId, page } = JSON.parse(sess);
+      const user = STATE.users.find(u => u.id === userId && u.status === 'ativo');
+      if (user) { STATE.currentUser = user; STATE.currentPage = page || 'dashboard'; }
+    }
   } catch(e) {}
 }
 window.addEventListener('beforeunload', saveState);
@@ -107,7 +117,7 @@ function render() {
 function renderAuth() {
   return `
   <div class="auth-wrapper">
-    <div class="auth-card">
+    <div class="auth-card auth-card-compact">
       <div class="auth-logo">
         <img src="logo.png" alt="Escola Miró" class="auth-logo-img-real" onerror="this.style.display='none'">
         <h1>TI - Escola Miró</h1>
@@ -259,7 +269,7 @@ function attachLayoutEvents() {
   $$('.nav-item[data-page]').forEach(btn => {
     btn.addEventListener('click', () => navigateTo(btn.dataset.page));
   });
-  $('#btn-logout').addEventListener('click', ()=>{ STATE.currentUser=null; STATE.currentPage='dashboard'; render(); });
+  $('#btn-logout').addEventListener('click', ()=>{ STATE.currentUser=null; STATE.currentPage='dashboard'; localStorage.removeItem('miro_ti_session'); render(); });
   const notifBtn = $('#notif-btn');
   if (notifBtn) notifBtn.addEventListener('click', e=>{ e.stopPropagation(); showNotifPanel(); });
   $('#btn-new-action').addEventListener('click', ()=>{
@@ -315,7 +325,7 @@ function attachPageEvents(page) {
   if (page==='usuarios') attachTableFilter('search-user', 'filter-user-status', 'users-tbody', ()=>renderUserRows(STATE.users));
   if (page==='equipamentos') attachEquipFilter();
   if (page==='inventario') attachInvFilter();
-  if (page==='relatorios') setTimeout(renderRelatorioCharts, 200);
+  if (page==='relatorios') setTimeout(()=>{ renderRelatorioCharts(); }, 200);
   if (page==='calendario') renderCalendario();
   if (page==='matriz') attachUnidadeFilter('Matriz');
   if (page==='ensinomedio') attachUnidadeFilter('Ensino Médio');
@@ -351,8 +361,89 @@ function showNotifPanel() {
   document.addEventListener('click',()=>panel.remove(),{once:true});
 }
 
+// ===== DASHBOARD USUÁRIO COMUM =====
+function dashboardUsuario() {
+  const u = STATE.currentUser;
+  const minhasReservas = STATE.reservas.filter(r => r.solicitante === u.nome);
+  const meusChamados = STATE.chamados.filter(c => c.solicitante === u.nome);
+  const reservasAtivas = minhasReservas.filter(r => r.status === 'ativo');
+  const chamadosAbertos = meusChamados.filter(c => c.status === 'aberto' || c.status === 'andamento');
+  const hoje = dateNow();
+  const reservasHoje = reservasAtivas.filter(r => r.dataInicio === hoje);
+
+  return `
+  <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div class="stat-card clickable" onclick="navigateTo('novaReserva')">
+      <div class="stat-icon blue"><i class="ti ti-calendar-event"></i></div>
+      <div class="stat-info"><div class="stat-number">${reservasAtivas.length}</div><div class="stat-label">Minhas Reservas</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('meuschamados')">
+      <div class="stat-icon red"><i class="ti ti-headset"></i></div>
+      <div class="stat-info"><div class="stat-number">${chamadosAbertos.length}</div><div class="stat-label">Chamados Abertos</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('meuschamados')">
+      <div class="stat-icon green"><i class="ti ti-circle-check"></i></div>
+      <div class="stat-info"><div class="stat-number">${meusChamados.filter(c=>c.status==='fechado').length}</div><div class="stat-label">Chamados Fechados</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon orange"><i class="ti ti-calendar-today"></i></div>
+      <div class="stat-info"><div class="stat-number">${reservasHoje.length}</div><div class="stat-label">Reservas Hoje</div></div>
+    </div>
+  </div>
+
+  <div class="grid-2 mb-20" style="margin-top:0">
+    <div class="card">
+      <div class="card-header" style="background:var(--primary-light)">
+        <span class="card-title"><i class="ti ti-calendar-event" style="color:var(--primary)"></i> Minhas Reservas Ativas</span>
+        <button class="btn btn-primary btn-sm" onclick="openModalReserva()"><i class="ti ti-plus"></i> Nova</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${reservasAtivas.length === 0
+          ? '<div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva ativa</h3><p>Clique em Nova Reserva para criar.</p></div>'
+          : reservasAtivas.slice(0,8).map(r=>`
+            <div class="today-item" style="padding:12px 16px">
+              <div class="today-item-icon" style="background:var(--primary-light);color:var(--primary)">
+                <i class="ti ti-device-laptop"></i>
+              </div>
+              <div class="today-item-info">
+                <div class="today-item-title">${r.equipamento}</div>
+                <div class="today-item-sub">${r.sala} · ${formatDate(r.dataInicio)} · ${r.horaInicio}–${r.horaFim}</div>
+              </div>
+              <span class="badge badge-${r.status}">${r.status}</span>
+            </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header" style="background:var(--primary-light)">
+        <span class="card-title"><i class="ti ti-headset" style="color:var(--primary)"></i> Meus Chamados</span>
+        <button class="btn btn-primary btn-sm" onclick="openModalChamado()"><i class="ti ti-plus"></i> Novo</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${meusChamados.length === 0
+          ? '<div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Nenhum chamado</h3></div>'
+          : meusChamados.slice(0,8).map(c=>`
+            <div class="today-item" style="padding:12px 16px">
+              <div class="today-item-icon" style="background:${c.status==='fechado'?'var(--success-bg)':c.prioridade==='Alta'?'var(--danger-bg)':'var(--warning-bg)'};color:${c.status==='fechado'?'var(--success)':c.prioridade==='Alta'?'var(--danger)':'var(--warning)'}">
+                <i class="ti ${c.status==='fechado'?'ti-check':'ti-urgent'}"></i>
+              </div>
+              <div class="today-item-info">
+                <div class="today-item-title">${c.titulo}</div>
+                <div class="today-item-sub">${c.categoria} · ${formatDate(c.criado)} · ${c.atribuido?'Atribuído: '+c.atribuido:'Aguardando atribuição'}</div>
+              </div>
+              <span class="badge badge-${c.status}">${c.status}</span>
+            </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
 // ===== DASHBOARD =====
 function dashboard() {
+  if (STATE.currentUser && STATE.currentUser.role !== 'admin') return dashboardUsuario();
   const hoje = dateNow();
   const reservasHoje = STATE.reservas.filter(r=>r.dataInicio===hoje && r.status==='ativo');
   const abertos = STATE.chamados.filter(c=>c.status==='aberto').length;
@@ -944,14 +1035,62 @@ function meuschamados() {
 // ===== RELATÓRIOS =====
 function relatorios() {
   return `
-  <div class="report-filters">
-    <label style="font-weight:600;font-size:13px">Período:</label>
-    <select class="filter-select" id="rel-periodo"><option value="mes">Este mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="anual">Anual</option></select>
-    <select class="filter-select" id="rel-uni"><option value="">Todas as unidades</option><option value="Matriz">Matriz</option><option value="Ensino Médio">Ensino Médio</option></select>
-    <button class="btn btn-primary" onclick="gerarRelatorio()"><i class="ti ti-chart-bar"></i> Gerar</button>
+  <div class="report-filters no-print">
+    <label style="font-weight:600;font-size:13px">Tipo:</label>
+    <select class="filter-select" id="rel-tipo" onchange="switchRelatorio(this.value)">
+      <option value="geral">Visão Geral</option>
+      <option value="chamados">Chamados</option>
+      <option value="reservas">Reservas</option>
+      <option value="inventario">Inventário</option>
+      <option value="licencas">Licenças</option>
+    </select>
+    <select class="filter-select" id="rel-uni">
+      <option value="">Todas as unidades</option>
+      <option value="Matriz">Matriz</option>
+      <option value="Ensino Médio">Ensino Médio</option>
+    </select>
+    <select class="filter-select" id="rel-status-f">
+      <option value="">Todos os status</option>
+      <option value="aberto">Aberto</option>
+      <option value="andamento">Em Andamento</option>
+      <option value="fechado">Fechado</option>
+      <option value="ativo">Ativo</option>
+    </select>
+    <input type="date" class="filter-select" id="rel-de" title="De" />
+    <input type="date" class="filter-select" id="rel-ate" value="${dateNow()}" title="Até" />
+    <button class="btn btn-primary" onclick="gerarRelatorio()"><i class="ti ti-refresh"></i> Atualizar</button>
     <button class="btn btn-ghost" onclick="window.print()"><i class="ti ti-printer"></i> Imprimir</button>
-    <button class="btn btn-ghost" onclick="toast('Para PDF: use Imprimir → Salvar como PDF','info')"><i class="ti ti-file-type-pdf"></i> PDF</button>
+    <button class="btn btn-ghost" onclick="toast('Use Imprimir → Salvar como PDF','info')"><i class="ti ti-file-type-pdf"></i> PDF</button>
   </div>
+  <div id="rel-content">${renderRelGeral()}</div>`;
+}
+
+function switchRelatorio(tipo) {
+  const el = document.getElementById('rel-content');
+  if (!el) return;
+  const map = { geral: renderRelGeral, chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas };
+  if (map[tipo]) { el.innerHTML = map[tipo](); if (tipo === 'geral') setTimeout(renderRelatorioCharts, 100); }
+}
+
+function getRelFiltros() {
+  const uni = document.getElementById('rel-uni')?.value || '';
+  const st  = document.getElementById('rel-status-f')?.value || '';
+  const de  = document.getElementById('rel-de')?.value || '';
+  const ate = document.getElementById('rel-ate')?.value || '';
+  return { uni, st, de, ate };
+}
+
+function filterByDate(list, campo, de, ate) {
+  return list.filter(item => {
+    const d = item[campo] || '';
+    if (de && d < de) return false;
+    if (ate && d > ate) return false;
+    return true;
+  });
+}
+
+function renderRelGeral() {
+  return `
   <div class="grid-2 mb-20">
     <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-line"></i> Chamados por Mês</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-mensal"></canvas></div></div></div>
     <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-pie"></i> Chamados por Prioridade</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-prio"></canvas></div></div></div>
@@ -961,13 +1100,198 @@ function relatorios() {
     <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-user-check"></i> Chamados por Usuário</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-user"></canvas></div></div></div>
   </div>
   <div class="grid-2 mb-20">
-    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-building-school"></i> Chamados por Unidade</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-unidade"></canvas></div></div></div>
-    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças — Vencimento</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-lic"></canvas></div></div></div>
+    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Chamados por Unidade</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-unidade"></canvas></div></div></div>
+    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças — Dias Restantes</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-lic"></canvas></div></div></div>
+  </div>
+  <div class="grid-4 mb-20" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-headset"></i></div><div class="stat-info"><div class="stat-number">${STATE.chamados.length}</div><div class="stat-label">Total Chamados</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-calendar-event"></i></div><div class="stat-info"><div class="stat-number">${STATE.reservas.length}</div><div class="stat-label">Total Reservas</div></div></div>
+    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-server"></i></div><div class="stat-info"><div class="stat-number">${STATE.inventario.length}</div><div class="stat-label">Itens Inventário</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-license"></i></div><div class="stat-info"><div class="stat-number">${STATE.licencas.length}</div><div class="stat-label">Licenças</div></div></div>
+  </div>`;
+}
+
+function renderRelChamados() {
+  const f = getRelFiltros();
+  let list = STATE.chamados;
+  if (f.uni) list = list.filter(c => (c.unidade||'Matriz') === f.uni);
+  if (f.st)  list = list.filter(c => c.status === f.st);
+  list = filterByDate(list, 'criado', f.de, f.ate);
+  const total=list.length, abertos=list.filter(c=>c.status==='aberto').length, andamento=list.filter(c=>c.status==='andamento').length, fechados=list.filter(c=>c.status==='fechado').length;
+  return `
+  <div class="print-header" style="display:none">
+    <h2>Relatório de Chamados — TI Escola Miró</h2>
+    <p>Gerado em: ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
+    <hr>
+  </div>
+  <div class="stats-grid mb-20">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-list"></i></div><div class="stat-info"><div class="stat-number">${total}</div><div class="stat-label">Total no Período</div></div></div>
+    <div class="stat-card"><div class="stat-icon red"><i class="ti ti-alert-circle"></i></div><div class="stat-info"><div class="stat-number">${abertos}</div><div class="stat-label">Abertos</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-loader"></i></div><div class="stat-info"><div class="stat-number">${andamento}</div><div class="stat-label">Em Andamento</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-check"></i></div><div class="stat-info"><div class="stat-number">${fechados}</div><div class="stat-label">Fechados</div></div></div>
   </div>
   <div class="card">
-    <div class="card-header"><span class="card-title"><i class="ti ti-table"></i> Detalhamento — Chamados</span></div>
-    <div class="table-wrapper"><table><thead><tr><th>#</th><th>Título</th><th>Categoria</th><th>Prioridade</th><th>Solicitante</th><th>Unidade</th><th>Status</th><th>Criado</th></tr></thead>
-    <tbody>${STATE.chamados.map(c=>`<tr><td><strong>#${c.id}</strong></td><td>${c.titulo}</td><td>${c.categoria}</td><td><span style="color:${prioColor(c.prioridade)};font-weight:700">${c.prioridade}</span></td><td>${c.solicitante}</td><td>${c.unidade||'Matriz'}</td><td><span class="badge badge-${c.status}">${c.status}</span></td><td>${formatDate(c.criado)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="card-header">
+      <span class="card-title"><i class="ti ti-headset"></i> Detalhamento de Chamados (${total})</span>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>#</th><th>Título</th><th>Descrição</th><th>Categoria</th><th>Prioridade</th><th>Solicitante</th><th>Atribuído</th><th>Unidade</th><th>Status</th><th>Aberto em</th><th>Atualizado</th></tr></thead>
+        <tbody>
+          ${list.length === 0 ? '<tr><td colspan="11"><div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Nenhum chamado no período</h3></div></td></tr>' :
+            list.map(c=>`
+            <tr>
+              <td><strong style="color:var(--primary)">#${c.id}</strong></td>
+              <td><strong>${c.titulo}</strong></td>
+              <td style="max-width:200px;font-size:12px;color:var(--gray-500)">${c.descricao}</td>
+              <td>${c.categoria}</td>
+              <td><span style="color:${prioColor(c.prioridade)};font-weight:700">${c.prioridade}</span></td>
+              <td>${c.solicitante}</td>
+              <td>${c.atribuido||'—'}</td>
+              <td>${c.unidade||'Matriz'}</td>
+              <td><span class="badge badge-${c.status}">${c.status}</span></td>
+              <td>${formatDate(c.criado)}</td>
+              <td>${formatDate(c.atualizado)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderRelReservas() {
+  const f = getRelFiltros();
+  let list = STATE.reservas;
+  if (f.uni) list = list.filter(r => (r.unidade||'Matriz') === f.uni);
+  if (f.st)  list = list.filter(r => r.status === f.st);
+  list = filterByDate(list, 'dataInicio', f.de, f.ate);
+  const total=list.length, ativas=list.filter(r=>r.status==='ativo').length, fechadas=list.filter(r=>r.status==='fechado').length;
+  return `
+  <div class="print-header" style="display:none">
+    <h2>Relatório de Reservas — TI Escola Miró</h2>
+    <p>Gerado em: ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p><hr>
+  </div>
+  <div class="stats-grid mb-20">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-list"></i></div><div class="stat-info"><div class="stat-number">${total}</div><div class="stat-label">Total no Período</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-calendar-check"></i></div><div class="stat-info"><div class="stat-number">${ativas}</div><div class="stat-label">Ativas</div></div></div>
+    <div class="stat-card"><div class="stat-icon gray"><i class="ti ti-circle-check"></i></div><div class="stat-info"><div class="stat-number">${fechadas}</div><div class="stat-label">Concluídas</div></div></div>
+    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-device-laptop"></i></div><div class="stat-info"><div class="stat-number">${[...new Set(list.map(r=>r.equipamento))].length}</div><div class="stat-label">Equipamentos Distintos</div></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-calendar-event"></i> Detalhamento de Reservas (${total})</span></div>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>#</th><th>Equipamento</th><th>Tipo</th><th>Solicitante</th><th>Cargo</th><th>Sala/Turma</th><th>Data</th><th>Horário</th><th>Qtd</th><th>Unidade</th><th>Status</th><th>Observações</th></tr></thead>
+        <tbody>
+          ${list.length === 0 ? '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva no período</h3></div></td></tr>' :
+            list.map(r=>`
+            <tr>
+              <td><strong style="color:var(--primary)">#${r.id}</strong></td>
+              <td><strong>${r.equipamento}</strong></td>
+              <td>${r.equipamentoTipo}</td>
+              <td>${r.solicitante}</td>
+              <td>${r.cargo}</td>
+              <td>${r.sala}</td>
+              <td>${formatDate(r.dataInicio)}</td>
+              <td>${r.horaInicio}–${r.horaFim}</td>
+              <td><strong>${r.quantidade}</strong></td>
+              <td>${r.unidade||'Matriz'}</td>
+              <td><span class="badge badge-${r.status}">${r.status}</span></td>
+              <td style="font-size:12px;color:var(--gray-500)">${r.obs||'—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderRelInventario() {
+  const f = getRelFiltros();
+  let list = STATE.inventario;
+  if (f.uni) list = list.filter(i => i.unidade === f.uni);
+  if (f.st)  list = list.filter(i => i.status === f.st);
+  return `
+  <div class="print-header" style="display:none">
+    <h2>Relatório de Inventário TI — Escola Miró</h2>
+    <p>Gerado em: ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p><hr>
+  </div>
+  <div class="stats-grid mb-20">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-server"></i></div><div class="stat-info"><div class="stat-number">${list.length}</div><div class="stat-label">Total de Itens</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-check"></i></div><div class="stat-info"><div class="stat-number">${list.filter(i=>i.status==='ativo').length}</div><div class="stat-label">Ativos</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-tool"></i></div><div class="stat-info"><div class="stat-number">${list.filter(i=>i.status==='manutencao').length}</div><div class="stat-label">Em Manutenção</div></div></div>
+    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-network"></i></div><div class="stat-info"><div class="stat-number">${list.filter(i=>i.categoria==='Rede').length}</div><div class="stat-label">Equipamentos de Rede</div></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-server"></i> Inventário Completo (${list.length})</span></div>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Nome</th><th>Categoria</th><th>Marca</th><th>Modelo</th><th>Patrimônio</th><th>Nº Série</th><th>IP</th><th>Local</th><th>Unidade</th><th>Garantia</th><th>Status</th><th>Observações</th></tr></thead>
+        <tbody>
+          ${list.length === 0 ? '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item</h3></div></td></tr>' :
+            list.map(i=>`
+            <tr>
+              <td><strong>${i.nome}</strong></td>
+              <td><span class="badge badge-reservado">${i.categoria}</span></td>
+              <td>${i.marca||'—'}</td><td>${i.modelo||'—'}</td>
+              <td><code style="font-size:11px;background:var(--gray-100);padding:2px 5px;border-radius:4px">${i.patrimonio}</code></td>
+              <td style="font-size:11px">${i.serie||'—'}</td>
+              <td><code style="font-size:11px">${i.ip||'—'}</code></td>
+              <td>${i.local||'—'}</td>
+              <td>${i.unidade}</td>
+              <td><span style="color:${diasParaVencer(i.garantia)<90?'var(--warning)':'inherit'}">${formatDate(i.garantia)||'—'}</span></td>
+              <td><span class="badge badge-${i.status==='ativo'?'fechado':'suspenso'}">${i.status}</span></td>
+              <td style="font-size:11px;color:var(--gray-500)">${i.obs||'—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderRelLicencas() {
+  const f = getRelFiltros();
+  let list = STATE.licencas;
+  if (f.uni) list = list.filter(l => l.unidade === f.uni);
+  if (f.st)  list = list.filter(l => l.status === f.st);
+  const totalValor = list.reduce((a,l)=>a+l.valor,0);
+  return `
+  <div class="print-header" style="display:none">
+    <h2>Relatório de Licenças — TI Escola Miró</h2>
+    <p>Gerado em: ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p><hr>
+  </div>
+  <div class="stats-grid mb-20">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-license"></i></div><div class="stat-info"><div class="stat-number">${list.length}</div><div class="stat-label">Total Licenças</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-check"></i></div><div class="stat-info"><div class="stat-number">${list.filter(l=>l.status==='ativo').length}</div><div class="stat-label">Ativas</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-alert-triangle"></i></div><div class="stat-info"><div class="stat-number">${list.filter(l=>l.status==='vencendo').length}</div><div class="stat-label">A Vencer</div></div></div>
+    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-coin"></i></div><div class="stat-info"><div class="stat-number">R$ ${totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="stat-label">Investimento Total</div></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças de Software (${list.length})</span></div>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Software</th><th>Fornecedor</th><th>Tipo</th><th>Qtd Licenças</th><th>Unidade</th><th>Chave</th><th>Compra</th><th>Vencimento</th><th>Dias Restantes</th><th>Valor</th><th>Status</th><th>Observações</th></tr></thead>
+        <tbody>
+          ${list.length === 0 ? '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-license-off"></i><h3>Nenhuma licença</h3></div></td></tr>' :
+            list.map(l=>{
+              const dias=diasParaVencer(l.vencimento), ac=dias<=30?'var(--danger)':dias<=90?'var(--warning)':'var(--success)';
+              return `<tr>
+                <td><strong>${l.nome}</strong></td>
+                <td>${l.fornecedor}</td>
+                <td><span class="badge badge-reservado">${l.tipo}</span></td>
+                <td><strong>${l.quantidade}</strong></td>
+                <td>${l.unidade}</td>
+                <td style="font-size:11px;font-family:monospace">${l.chave||'—'}</td>
+                <td>${formatDate(l.dataCompra)}</td>
+                <td><strong style="color:${ac}">${formatDate(l.vencimento)}</strong></td>
+                <td><span style="color:${ac};font-weight:700">${dias>=9999?'Perpétua':dias+' dias'}</span></td>
+                <td>R$ ${l.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+                <td><span class="badge badge-${l.status==='ativo'?'fechado':l.status==='vencendo'?'andamento':'suspenso'}">${l.status}</span></td>
+                <td style="font-size:11px;color:var(--gray-500)">${l.obs||'—'}</td>
+              </tr>`;
+            }).join('')}
+        </tbody>
+      </table>
+    </div>
   </div>`;
 }
 
@@ -989,7 +1313,14 @@ function renderRelatorioCharts() {
   const ctx6=document.getElementById('chart-lic');
   if(ctx6) new Chart(ctx6,{type:'bar',data:{labels:STATE.licencas.map(l=>l.nome.split(' ').slice(0,2).join(' ')),datasets:[{label:'Dias restantes',data:STATE.licencas.map(l=>Math.min(diasParaVencer(l.vencimento),730)),backgroundColor:STATE.licencas.map(l=>diasParaVencer(l.vencimento)<=30?'#e74c3c':diasParaVencer(l.vencimento)<=90?'#e67e22':'#27ae60'),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
 }
-function gerarRelatorio(){ toast('Relatório atualizado!','success'); setTimeout(renderRelatorioCharts,100); }
+function gerarRelatorio() {
+  const tipo = document.getElementById('rel-tipo')?.value || 'geral';
+  const el = document.getElementById('rel-content');
+  if (!el) return;
+  const map = { geral: renderRelGeral, chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas };
+  if (map[tipo]) { el.innerHTML = map[tipo](); if (tipo === 'geral') setTimeout(renderRelatorioCharts, 100); }
+  toast('Relatório gerado!', 'success');
+}
 
 // ===== MODALS: RESERVA =====
 function openModalReserva(reservaId=null, preData=null) {
@@ -1031,7 +1362,10 @@ function openModalReserva(reservaId=null, preData=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Nome do Solicitante</label>
-          <input type="text" id="res-nome" placeholder="Nome completo" value="${r?.solicitante||STATE.currentUser.nome}" />
+          <div style="position:relative">
+          <input type="text" id="res-nome" placeholder="Nome completo" value="${r?.solicitante||STATE.currentUser.nome}" autocomplete="off" oninput="showUserSuggest(this,'res-nome-list')" />
+          <div id="res-nome-list" class="autocomplete-list" style="display:none"></div>
+        </div>
         </div>
         <div class="form-group">
           <label class="required">Sala / Turma</label>
@@ -1135,7 +1469,10 @@ function openModalChamado(chamadoId=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Solicitante</label>
-          <input type="text" id="ch-sol" value="${c?.solicitante||STATE.currentUser.nome}" />
+          <div style="position:relative">
+          <input type="text" id="ch-sol" value="${c?.solicitante||STATE.currentUser.nome}" autocomplete="off" oninput="showUserSuggest(this,'ch-sol-list')" />
+          <div id="ch-sol-list" class="autocomplete-list" style="display:none"></div>
+        </div>
         </div>
         <div class="form-group">
           <label>Unidade</label>
@@ -1519,6 +1856,32 @@ function renderUnidadeCharts(unidade) {
 
 function openModalReservaUnidade(unidade) { openModalReserva(null, null, unidade); }
 function openModalChamadoUnidade(unidade) { openModalChamado(null, unidade); }
+
+// ===== AUTOCOMPLETE USUÁRIOS =====
+function showUserSuggest(input, listId) {
+  const val = input.value.toLowerCase();
+  const list = document.getElementById(listId);
+  if (!list) return;
+  if (!val) { list.style.display = 'none'; return; }
+  const matches = STATE.users.filter(u => u.status === 'ativo' && u.nome.toLowerCase().includes(val)).slice(0, 6);
+  if (!matches.length) { list.style.display = 'none'; return; }
+  list.innerHTML = matches.map(u => `
+    <div class="autocomplete-item" onclick="selectUser('${u.nome}','${input.id}','${listId}')">
+      <div class="autocomplete-avatar">${initials(u.nome)}</div>
+      <div><div style="font-weight:600;font-size:13px">${u.nome}</div><div style="font-size:11px;color:var(--gray-400)">${u.unidade||''} · ${u.role==='admin'?'Admin':'Usuário'}</div></div>
+    </div>`).join('');
+  list.style.display = 'block';
+  document.addEventListener('click', function handler(e) {
+    if (!list.contains(e.target) && e.target !== input) { list.style.display = 'none'; document.removeEventListener('click', handler); }
+  });
+}
+
+function selectUser(nome, inputId, listId) {
+  const input = document.getElementById(inputId);
+  const list  = document.getElementById(listId);
+  if (input) input.value = nome;
+  if (list)  list.style.display = 'none';
+}
 
 // ===== INIT =====
 loadState();
