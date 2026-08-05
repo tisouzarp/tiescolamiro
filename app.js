@@ -1034,16 +1034,31 @@ function meuschamados() {
 
 // ===== RELATÓRIOS =====
 function relatorios() {
+  const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   return `
-  <div class="report-filters no-print">
-    <label style="font-weight:600;font-size:13px">Tipo:</label>
-    <select class="filter-select" id="rel-tipo" onchange="switchRelatorio(this.value)">
-      <option value="geral">Visão Geral</option>
-      <option value="chamados">Chamados</option>
-      <option value="reservas">Reservas</option>
-      <option value="inventario">Inventário</option>
-      <option value="licencas">Licenças</option>
-    </select>
+  <!-- BARRA DE CONTROLE -->
+  <div class="rel-toolbar no-print">
+    <!-- MODO -->
+    <div class="rel-mode-switch">
+      <button class="rel-mode-btn active" id="btn-modo-graficos" onclick="setRelMode('graficos')">
+        <i class="ti ti-chart-bar"></i> Gráficos
+      </button>
+      <button class="rel-mode-btn" id="btn-modo-dados" onclick="setRelMode('dados')">
+        <i class="ti ti-table"></i> Dados
+      </button>
+    </div>
+    <!-- TIPO (só aparece no modo dados) -->
+    <div id="rel-tipo-wrap" style="display:none;align-items:center;gap:8px">
+      <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Relatório:</label>
+      <select class="filter-select" id="rel-tipo" onchange="switchRelatorio(this.value)" style="font-weight:700;color:var(--primary)">
+        <option value="chamados">Chamados</option>
+        <option value="reservas">Reservas</option>
+        <option value="inventario">Inventário TI</option>
+        <option value="licencas">Licenças</option>
+        <option value="equipamentos">Equipamentos</option>
+      </select>
+    </div>
+    <!-- FILTROS COMUNS -->
     <select class="filter-select" id="rel-uni">
       <option value="">Todas as unidades</option>
       <option value="Matriz">Matriz</option>
@@ -1053,31 +1068,188 @@ function relatorios() {
       <option value="">Todos os status</option>
       <option value="aberto">Aberto</option>
       <option value="andamento">Em Andamento</option>
+      <option value="pendente">Pendente</option>
       <option value="fechado">Fechado</option>
       <option value="ativo">Ativo</option>
+      <option value="suspenso">Suspenso</option>
     </select>
-    <input type="date" class="filter-select" id="rel-de" title="De" />
-    <input type="date" class="filter-select" id="rel-ate" value="${dateNow()}" title="Até" />
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:12px;color:var(--gray-500)">De</span>
+      <input type="date" class="filter-select" id="rel-de" style="width:140px"/>
+      <span style="font-size:12px;color:var(--gray-500)">até</span>
+      <input type="date" class="filter-select" id="rel-ate" value="${dateNow()}" style="width:140px"/>
+    </div>
     <button class="btn btn-primary" onclick="gerarRelatorio()"><i class="ti ti-refresh"></i> Atualizar</button>
-    <button class="btn btn-ghost" onclick="window.print()"><i class="ti ti-printer"></i> Imprimir</button>
-    <button class="btn btn-ghost" onclick="toast('Use Imprimir → Salvar como PDF','info')"><i class="ti ti-file-type-pdf"></i> PDF</button>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="window.print()"><i class="ti ti-printer"></i> Imprimir / PDF</button>
+    </div>
   </div>
-  <div id="rel-content">${renderRelGeral()}</div>`;
+
+  <!-- ÁREA DO RELATÓRIO -->
+  <div id="rel-content">
+    ${renderRelGraficos()}
+  </div>`;
+}
+
+// ============================================================
+// MODO: GRÁFICOS
+// ============================================================
+function renderRelGraficos() {
+  const now = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const totalCh = STATE.chamados.length;
+  const totalRes = STATE.reservas.length;
+  const totalInv = STATE.inventario.length;
+  const totalLic = STATE.licencas.length;
+  const totalEq = STATE.equipamentos.length;
+  const totalUsers = STATE.users.filter(u=>u.status==='ativo').length;
+  const licVencendo = STATE.licencas.filter(l=>diasParaVencer(l.vencimento)<=30&&diasParaVencer(l.vencimento)>0).length;
+  const chAbertos = STATE.chamados.filter(c=>c.status==='aberto').length;
+  const chFechados = STATE.chamados.filter(c=>c.status==='fechado').length;
+
+  return `
+  <!-- CABEÇALHO INSTITUCIONAL -->
+  <div class="rel-print-header">
+    <div class="rel-print-logo">
+      <img src="logo.png" alt="Escola Miró" style="height:60px;object-fit:contain" onerror="this.style.display='none'">
+    </div>
+    <div class="rel-print-info">
+      <h1>TI — Escola Miró</h1>
+      <h2>Relatório Executivo — Visão Geral</h2>
+      <p>Responsável TI: <strong>Tiago Souza</strong> &nbsp;|&nbsp; Emitido em: <strong>${now}, ${hora}</strong></p>
+    </div>
+  </div>
+
+  <!-- KPIs GERAIS -->
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${totalCh}</div><div class="rel-kpi-label">Total de Chamados</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${chFechados}</div><div class="rel-kpi-label">Chamados Fechados</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${chAbertos}</div><div class="rel-kpi-label">Chamados Abertos</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${totalRes}</div><div class="rel-kpi-label">Total de Reservas</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">${totalEq}</div><div class="rel-kpi-label">Equipamentos</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${totalInv}</div><div class="rel-kpi-label">Itens no Inventário</div></div>
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${totalLic}</div><div class="rel-kpi-label">Licenças de Software</div></div>
+    <div class="rel-kpi ${licVencendo>0?'red':'green'}"><div class="rel-kpi-num">${licVencendo}</div><div class="rel-kpi-label">Licenças a Vencer</div></div>
+  </div>
+
+  <!-- GRÁFICOS LINHA 1 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-line"></i> Chamados por Mês (Ano Atual)</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-mensal"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Status dos Chamados</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-status-rel"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- GRÁFICOS LINHA 2 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-pie"></i> Chamados por Prioridade</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-prio"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Chamados por Categoria</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-cat-rel"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- GRÁFICOS LINHA 3 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Reservas por Tipo de Equipamento</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-equip-uso"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-user-check"></i> Chamados por Usuário</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-user"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- GRÁFICOS LINHA 4 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Distribuição por Unidade</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-unidade"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças — Dias Restantes</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-lic"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- GRÁFICOS LINHA 5 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Equipamentos por Status</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-equip-status"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-line"></i> Reservas por Mês</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-res-mensal"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- RODAPÉ DE IMPRESSÃO -->
+  <div class="rel-print-footer">
+    <p>TI - Escola Miró &nbsp;|&nbsp; Responsável: Tiago Souza &nbsp;|&nbsp; Gerado em: ${now}, ${hora}</p>
+    <p>Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.</p>
+  </div>`;
+}
+
+// ============================================================
+// MODO: DADOS
+// ============================================================
+function renderRelDados(tipo) {
+  tipo = tipo || document.getElementById('rel-tipo')?.value || 'chamados';
+  const map = { chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas, equipamentos: renderRelEquipamentos };
+  return map[tipo] ? map[tipo]() : '';
+}
+
+function setRelMode(modo) {
+  document.getElementById('btn-modo-graficos')?.classList.toggle('active', modo==='graficos');
+  document.getElementById('btn-modo-dados')?.classList.toggle('active', modo==='dados');
+  const tipoWrap = document.getElementById('rel-tipo-wrap');
+  if (tipoWrap) tipoWrap.style.display = modo==='dados' ? 'flex' : 'none';
+  const el = document.getElementById('rel-content');
+  if (!el) return;
+  if (modo === 'graficos') {
+    el.innerHTML = renderRelGraficos();
+    setTimeout(renderRelatorioCharts, 100);
+  } else {
+    const tipo = document.getElementById('rel-tipo')?.value || 'chamados';
+    el.innerHTML = renderRelDados(tipo);
+  }
 }
 
 function switchRelatorio(tipo) {
   const el = document.getElementById('rel-content');
+  if (el) el.innerHTML = renderRelDados(tipo);
+}
+
+function gerarRelatorio() {
+  const modoGraf = document.getElementById('btn-modo-graficos')?.classList.contains('active');
+  const el = document.getElementById('rel-content');
   if (!el) return;
-  const map = { geral: renderRelGeral, chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas };
-  if (map[tipo]) { el.innerHTML = map[tipo](); if (tipo === 'geral') setTimeout(renderRelatorioCharts, 100); }
+  if (modoGraf) {
+    el.innerHTML = renderRelGraficos();
+    setTimeout(renderRelatorioCharts, 100);
+  } else {
+    const tipo = document.getElementById('rel-tipo')?.value || 'chamados';
+    el.innerHTML = renderRelDados(tipo);
+  }
+  toast('Relatório atualizado!', 'success');
 }
 
 function getRelFiltros() {
-  const uni = document.getElementById('rel-uni')?.value || '';
-  const st  = document.getElementById('rel-status-f')?.value || '';
-  const de  = document.getElementById('rel-de')?.value || '';
-  const ate = document.getElementById('rel-ate')?.value || '';
-  return { uni, st, de, ate };
+  return {
+    uni: document.getElementById('rel-uni')?.value || '',
+    st:  document.getElementById('rel-status-f')?.value || '',
+    de:  document.getElementById('rel-de')?.value || '',
+    ate: document.getElementById('rel-ate')?.value || '',
+  };
 }
 
 function filterByDate(list, campo, de, ate) {
@@ -1089,238 +1261,529 @@ function filterByDate(list, campo, de, ate) {
   });
 }
 
-function renderRelGeral() {
+// ============================================================
+// HELPER: cabeçalho de impressão por tipo
+// ============================================================
+function relPrintHeader(titulo) {
+  const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   return `
-  <div class="grid-2 mb-20">
-    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-line"></i> Chamados por Mês</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-mensal"></canvas></div></div></div>
-    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-pie"></i> Chamados por Prioridade</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-prio"></canvas></div></div></div>
-  </div>
-  <div class="grid-2 mb-20">
-    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Uso por Equipamento</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-equip-uso"></canvas></div></div></div>
-    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-user-check"></i> Chamados por Usuário</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-user"></canvas></div></div></div>
-  </div>
-  <div class="grid-2 mb-20">
-    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Chamados por Unidade</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-unidade"></canvas></div></div></div>
-    <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças — Dias Restantes</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-lic"></canvas></div></div></div>
-  </div>
-  <div class="grid-4 mb-20" style="grid-template-columns:repeat(4,1fr)">
-    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-headset"></i></div><div class="stat-info"><div class="stat-number">${STATE.chamados.length}</div><div class="stat-label">Total Chamados</div></div></div>
-    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-calendar-event"></i></div><div class="stat-info"><div class="stat-number">${STATE.reservas.length}</div><div class="stat-label">Total Reservas</div></div></div>
-    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-server"></i></div><div class="stat-info"><div class="stat-number">${STATE.inventario.length}</div><div class="stat-label">Itens Inventário</div></div></div>
-    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-license"></i></div><div class="stat-info"><div class="stat-number">${STATE.licencas.length}</div><div class="stat-label">Licenças</div></div></div>
+  <div class="rel-print-header">
+    <div class="rel-print-logo">
+      <img src="logo.png" alt="Escola Miró" style="height:55px;object-fit:contain" onerror="this.style.display='none'">
+    </div>
+    <div class="rel-print-info">
+      <h1>TI — Escola Miró</h1>
+      <h2>${titulo}</h2>
+      <p>Responsável TI: <strong>Tiago Souza</strong> &nbsp;|&nbsp; Emitido em: <strong>${now} às ${hora}</strong></p>
+    </div>
   </div>`;
 }
 
+function relPrintFooter() {
+  const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  return `<div class="rel-print-footer"><p>TI - Escola Miró &nbsp;|&nbsp; Responsável: Tiago Souza &nbsp;|&nbsp; ${now} às ${hora}</p><p>Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.</p></div>`;
+}
+
+// ============================================================
+// RELATÓRIO: CHAMADOS
+// ============================================================
 function renderRelChamados() {
   const f = getRelFiltros();
   let list = STATE.chamados;
   if (f.uni) list = list.filter(c => (c.unidade||'Matriz') === f.uni);
   if (f.st)  list = list.filter(c => c.status === f.st);
   list = filterByDate(list, 'criado', f.de, f.ate);
-  const total=list.length, abertos=list.filter(c=>c.status==='aberto').length, andamento=list.filter(c=>c.status==='andamento').length, fechados=list.filter(c=>c.status==='fechado').length;
+  const total=list.length;
+  const abertos=list.filter(c=>c.status==='aberto').length;
+  const andamento=list.filter(c=>c.status==='andamento').length;
+  const fechados=list.filter(c=>c.status==='fechado').length;
+  const suspensos=list.filter(c=>c.status==='suspenso').length;
+  const alta=list.filter(c=>c.prioridade==='Alta').length;
+  const media=list.filter(c=>c.prioridade==='Media').length;
+  const baixa=list.filter(c=>c.prioridade==='Baixa').length;
+  const periodo = f.de && f.ate ? `${formatDate(f.de)} a ${formatDate(f.ate)}` : f.de ? `A partir de ${formatDate(f.de)}` : f.ate ? `Até ${formatDate(f.ate)}` : 'Todo o período';
+  const unidLabel = f.uni || 'Todas as unidades';
   return `
-  <div class="print-header" style="display:none">
-    <h2>Relatório de Chamados — TI Escola Miró</h2>
-    <p>Gerado em: ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
-    <hr>
+  ${relPrintHeader('Relatório Detalhado de Chamados')}
+  <!-- RESUMO DO FILTRO -->
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros aplicados:</span>
+    <span class="rel-filter-tag"><i class="ti ti-building"></i> ${unidLabel}</span>
+    <span class="rel-filter-tag"><i class="ti ti-calendar"></i> ${periodo}</span>
+    ${f.st ? `<span class="rel-filter-tag"><i class="ti ti-circle"></i> Status: ${f.st}</span>` : ''}
   </div>
-  <div class="stats-grid mb-20">
-    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-list"></i></div><div class="stat-info"><div class="stat-number">${total}</div><div class="stat-label">Total no Período</div></div></div>
-    <div class="stat-card"><div class="stat-icon red"><i class="ti ti-alert-circle"></i></div><div class="stat-info"><div class="stat-number">${abertos}</div><div class="stat-label">Abertos</div></div></div>
-    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-loader"></i></div><div class="stat-info"><div class="stat-number">${andamento}</div><div class="stat-label">Em Andamento</div></div></div>
-    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-check"></i></div><div class="stat-info"><div class="stat-number">${fechados}</div><div class="stat-label">Fechados</div></div></div>
+
+  <!-- KPIs -->
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${total}</div><div class="rel-kpi-label">Total de Chamados</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${abertos}</div><div class="rel-kpi-label">Abertos</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${andamento}</div><div class="rel-kpi-label">Em Andamento</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${fechados}</div><div class="rel-kpi-label">Fechados</div></div>
+    <div class="rel-kpi gray"><div class="rel-kpi-num">${suspensos}</div><div class="rel-kpi-label">Suspensos</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${alta}</div><div class="rel-kpi-label">Prioridade Alta</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${media}</div><div class="rel-kpi-label">Prioridade Média</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${baixa}</div><div class="rel-kpi-label">Prioridade Baixa</div></div>
   </div>
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title"><i class="ti ti-headset"></i> Detalhamento de Chamados (${total})</span>
+
+  <!-- TABELA COMPLETA -->
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-headset"></i> Chamados — Detalhamento Completo (${total} registros)</span>
     </div>
     <div class="table-wrapper">
-      <table>
-        <thead><tr><th>#</th><th>Título</th><th>Descrição</th><th>Categoria</th><th>Prioridade</th><th>Solicitante</th><th>Atribuído</th><th>Unidade</th><th>Status</th><th>Aberto em</th><th>Atualizado</th></tr></thead>
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th>Título</th>
+            <th>Descrição Completa</th>
+            <th>Categoria</th>
+            <th>Prioridade</th>
+            <th>Solicitante</th>
+            <th>Atribuído</th>
+            <th>Unidade</th>
+            <th>Status</th>
+            <th>Data Abertura</th>
+            <th>Última Atualização</th>
+          </tr>
+        </thead>
         <tbody>
-          ${list.length === 0 ? '<tr><td colspan="11"><div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Nenhum chamado no período</h3></div></td></tr>' :
-            list.map(c=>`
-            <tr>
-              <td><strong style="color:var(--primary)">#${c.id}</strong></td>
-              <td><strong>${c.titulo}</strong></td>
-              <td style="max-width:200px;font-size:12px;color:var(--gray-500)">${c.descricao}</td>
-              <td>${c.categoria}</td>
-              <td><span style="color:${prioColor(c.prioridade)};font-weight:700">${c.prioridade}</span></td>
-              <td>${c.solicitante}</td>
-              <td>${c.atribuido||'—'}</td>
-              <td>${c.unidade||'Matriz'}</td>
-              <td><span class="badge badge-${c.status}">${c.status}</span></td>
-              <td>${formatDate(c.criado)}</td>
-              <td>${formatDate(c.atualizado)}</td>
+          ${list.length === 0
+            ? '<tr><td colspan="11"><div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Nenhum chamado no período</h3></div></td></tr>'
+            : list.map((c,i)=>`
+            <tr class="${i%2===1?'rel-row-alt':''}">
+              <td><strong style="color:var(--primary);font-size:13px">#${c.id}</strong></td>
+              <td><strong style="font-size:13px">${c.titulo}</strong></td>
+              <td style="font-size:12px;color:var(--gray-600);max-width:220px;line-height:1.4">${c.descricao}</td>
+              <td><span class="badge badge-reservado" style="font-size:11px">${c.categoria}</span></td>
+              <td><span class="rel-prio rel-prio-${c.prioridade.toLowerCase()}">${c.prioridade}</span></td>
+              <td style="font-size:13px"><strong>${c.solicitante}</strong></td>
+              <td style="font-size:12px">${c.atribuido||'<span style="color:var(--gray-400)">Não atribuído</span>'}</td>
+              <td style="font-size:12px">${c.unidade||'Matriz'}</td>
+              <td><span class="badge badge-${c.status}" style="font-size:11px">${c.status}</span></td>
+              <td style="font-size:12px;white-space:nowrap">${formatDate(c.criado)}</td>
+              <td style="font-size:12px;white-space:nowrap">${formatDate(c.atualizado)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>
-  </div>`;
+  </div>
+  ${relPrintFooter()}`;
 }
 
+// ============================================================
+// RELATÓRIO: RESERVAS
+// ============================================================
 function renderRelReservas() {
   const f = getRelFiltros();
   let list = STATE.reservas;
   if (f.uni) list = list.filter(r => (r.unidade||'Matriz') === f.uni);
   if (f.st)  list = list.filter(r => r.status === f.st);
   list = filterByDate(list, 'dataInicio', f.de, f.ate);
-  const total=list.length, ativas=list.filter(r=>r.status==='ativo').length, fechadas=list.filter(r=>r.status==='fechado').length;
+  const total=list.length;
+  const ativas=list.filter(r=>r.status==='ativo').length;
+  const fechadas=list.filter(r=>r.status==='fechado').length;
+  const suspensos=list.filter(r=>r.status==='suspenso').length;
+  const qtdTotal=list.reduce((a,r)=>a+(r.quantidade||1),0);
+  const equipsDistintos=[...new Set(list.map(r=>r.equipamento))].length;
+  const solicitDistintos=[...new Set(list.map(r=>r.solicitante))].length;
+  const periodo = f.de && f.ate ? `${formatDate(f.de)} a ${formatDate(f.ate)}` : 'Todo o período';
   return `
-  <div class="print-header" style="display:none">
-    <h2>Relatório de Reservas — TI Escola Miró</h2>
-    <p>Gerado em: ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p><hr>
+  ${relPrintHeader('Relatório Detalhado de Reservas')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag"><i class="ti ti-building"></i> ${f.uni||'Todas as unidades'}</span>
+    <span class="rel-filter-tag"><i class="ti ti-calendar"></i> ${periodo}</span>
+    ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
   </div>
-  <div class="stats-grid mb-20">
-    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-list"></i></div><div class="stat-info"><div class="stat-number">${total}</div><div class="stat-label">Total no Período</div></div></div>
-    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-calendar-check"></i></div><div class="stat-info"><div class="stat-number">${ativas}</div><div class="stat-label">Ativas</div></div></div>
-    <div class="stat-card"><div class="stat-icon gray"><i class="ti ti-circle-check"></i></div><div class="stat-info"><div class="stat-number">${fechadas}</div><div class="stat-label">Concluídas</div></div></div>
-    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-device-laptop"></i></div><div class="stat-info"><div class="stat-number">${[...new Set(list.map(r=>r.equipamento))].length}</div><div class="stat-label">Equipamentos Distintos</div></div></div>
+
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${total}</div><div class="rel-kpi-label">Total de Reservas</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${ativas}</div><div class="rel-kpi-label">Reservas Ativas</div></div>
+    <div class="rel-kpi gray"><div class="rel-kpi-num">${fechadas}</div><div class="rel-kpi-label">Concluídas</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${suspensos}</div><div class="rel-kpi-label">Suspensas</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${qtdTotal}</div><div class="rel-kpi-label">Itens Reservados (total)</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">${equipsDistintos}</div><div class="rel-kpi-label">Equipamentos Distintos</div></div>
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${solicitDistintos}</div><div class="rel-kpi-label">Solicitantes Distintos</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${[...new Set(list.map(r=>r.sala))].length}</div><div class="rel-kpi-label">Salas/Turmas</div></div>
   </div>
-  <div class="card">
-    <div class="card-header"><span class="card-title"><i class="ti ti-calendar-event"></i> Detalhamento de Reservas (${total})</span></div>
+
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-calendar-event"></i> Reservas — Detalhamento Completo (${total} registros)</span>
+    </div>
     <div class="table-wrapper">
-      <table>
-        <thead><tr><th>#</th><th>Equipamento</th><th>Tipo</th><th>Solicitante</th><th>Cargo</th><th>Sala/Turma</th><th>Data</th><th>Horário</th><th>Qtd</th><th>Unidade</th><th>Status</th><th>Observações</th></tr></thead>
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Equipamento</th>
+            <th>Tipo</th>
+            <th>Solicitante</th>
+            <th>Cargo</th>
+            <th>Sala / Turma</th>
+            <th>Data Reserva</th>
+            <th>Horário Início</th>
+            <th>Horário Fim</th>
+            <th>Duração</th>
+            <th>Quantidade</th>
+            <th>Unidade</th>
+            <th>Status</th>
+            <th>Data Cadastro</th>
+            <th>Observações</th>
+          </tr>
+        </thead>
         <tbody>
-          ${list.length === 0 ? '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva no período</h3></div></td></tr>' :
-            list.map(r=>`
-            <tr>
-              <td><strong style="color:var(--primary)">#${r.id}</strong></td>
-              <td><strong>${r.equipamento}</strong></td>
-              <td>${r.equipamentoTipo}</td>
-              <td>${r.solicitante}</td>
-              <td>${r.cargo}</td>
-              <td>${r.sala}</td>
-              <td>${formatDate(r.dataInicio)}</td>
-              <td>${r.horaInicio}–${r.horaFim}</td>
-              <td><strong>${r.quantidade}</strong></td>
-              <td>${r.unidade||'Matriz'}</td>
-              <td><span class="badge badge-${r.status}">${r.status}</span></td>
-              <td style="font-size:12px;color:var(--gray-500)">${r.obs||'—'}</td>
-            </tr>`).join('')}
+          ${list.length === 0
+            ? '<tr><td colspan="15"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva no período</h3></div></td></tr>'
+            : list.map((r,i)=>{
+                const hi=r.horaInicio||'00:00', hf=r.horaFim||'00:00';
+                const [hhi,mmi]=hi.split(':').map(Number);
+                const [hhf,mmf]=hf.split(':').map(Number);
+                const dur=((hhf*60+mmf)-(hhi*60+mmi));
+                const durStr=dur>0?`${Math.floor(dur/60)}h${dur%60>0?String(dur%60).padStart(2,'0')+'min':''}`:'-';
+                return `<tr class="${i%2===1?'rel-row-alt':''}">
+                  <td><strong style="color:var(--primary)">#${r.id}</strong></td>
+                  <td><strong style="font-size:13px">${r.equipamento}</strong></td>
+                  <td><span class="badge badge-reservado" style="font-size:11px">${r.equipamentoTipo}</span></td>
+                  <td style="font-size:13px"><strong>${r.solicitante}</strong></td>
+                  <td style="font-size:12px;color:var(--gray-500)">${r.cargo}</td>
+                  <td style="font-size:13px"><strong>${r.sala}</strong></td>
+                  <td style="font-size:12px;white-space:nowrap"><strong>${formatDate(r.dataInicio)}</strong></td>
+                  <td style="font-size:13px;text-align:center"><strong>${r.horaInicio}</strong></td>
+                  <td style="font-size:13px;text-align:center"><strong>${r.horaFim}</strong></td>
+                  <td style="font-size:12px;text-align:center;color:var(--primary)">${durStr}</td>
+                  <td style="text-align:center"><strong style="font-size:14px">${r.quantidade||1}</strong></td>
+                  <td style="font-size:12px">${r.unidade||'Matriz'}</td>
+                  <td><span class="badge badge-${r.status}" style="font-size:11px">${r.status}</span></td>
+                  <td style="font-size:11px;color:var(--gray-400)">${formatDate(r.criado)}</td>
+                  <td style="font-size:12px;color:var(--gray-500)">${r.obs||'—'}</td>
+                </tr>`;
+              }).join('')}
         </tbody>
       </table>
     </div>
-  </div>`;
+  </div>
+  ${relPrintFooter()}`;
 }
 
+// ============================================================
+// RELATÓRIO: INVENTÁRIO
+// ============================================================
 function renderRelInventario() {
   const f = getRelFiltros();
   let list = STATE.inventario;
   if (f.uni) list = list.filter(i => i.unidade === f.uni);
   if (f.st)  list = list.filter(i => i.status === f.st);
+  const cats={};
+  list.forEach(i=>{ cats[i.categoria]=(cats[i.categoria]||0)+1; });
   return `
-  <div class="print-header" style="display:none">
-    <h2>Relatório de Inventário TI — Escola Miró</h2>
-    <p>Gerado em: ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p><hr>
+  ${relPrintHeader('Relatório de Inventário TI')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
+    ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
   </div>
-  <div class="stats-grid mb-20">
-    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-server"></i></div><div class="stat-info"><div class="stat-number">${list.length}</div><div class="stat-label">Total de Itens</div></div></div>
-    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-check"></i></div><div class="stat-info"><div class="stat-number">${list.filter(i=>i.status==='ativo').length}</div><div class="stat-label">Ativos</div></div></div>
-    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-tool"></i></div><div class="stat-info"><div class="stat-number">${list.filter(i=>i.status==='manutencao').length}</div><div class="stat-label">Em Manutenção</div></div></div>
-    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-network"></i></div><div class="stat-info"><div class="stat-number">${list.filter(i=>i.categoria==='Rede').length}</div><div class="stat-label">Equipamentos de Rede</div></div></div>
+
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Total de Itens</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${list.filter(i=>i.status==='ativo').length}</div><div class="rel-kpi-label">Ativos</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${list.filter(i=>i.status==='manutencao').length}</div><div class="rel-kpi-label">Em Manutenção</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(i=>i.status==='inativo').length}</div><div class="rel-kpi-label">Inativos</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${list.filter(i=>i.categoria==='Rede').length}</div><div class="rel-kpi-label">Equipamentos de Rede</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${list.filter(i=>i.categoria==='Impressora').length}</div><div class="rel-kpi-label">Impressoras</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(i=>diasParaVencer(i.garantia)<90&&diasParaVencer(i.garantia)>0).length}</div><div class="rel-kpi-label">Garantia a Vencer</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">${Object.keys(cats).length}</div><div class="rel-kpi-label">Categorias</div></div>
   </div>
-  <div class="card">
-    <div class="card-header"><span class="card-title"><i class="ti ti-server"></i> Inventário Completo (${list.length})</span></div>
+
+  <!-- SUMÁRIO POR CATEGORIA -->
+  <div class="card mb-20">
+    <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Resumo por Categoria</span></div>
+    <div class="card-body">
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        ${Object.entries(cats).map(([cat,qtd])=>`
+        <div style="background:var(--primary-light);border:1px solid var(--primary-mid);border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px;font-weight:800;color:var(--primary)">${qtd}</span>
+          <span style="font-size:13px;font-weight:600;color:var(--gray-700)">${cat}</span>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-server"></i> Inventário Completo — Todos os Campos (${list.length} itens)</span>
+    </div>
     <div class="table-wrapper">
-      <table>
-        <thead><tr><th>Nome</th><th>Categoria</th><th>Marca</th><th>Modelo</th><th>Patrimônio</th><th>Nº Série</th><th>IP</th><th>Local</th><th>Unidade</th><th>Garantia</th><th>Status</th><th>Observações</th></tr></thead>
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>Nome do Equipamento</th>
+            <th>Categoria</th>
+            <th>Tipo</th>
+            <th>Marca</th>
+            <th>Modelo</th>
+            <th>Nº Patrimônio</th>
+            <th>Nº de Série</th>
+            <th>Endereço IP</th>
+            <th>Local / Sala</th>
+            <th>Unidade</th>
+            <th>Garantia até</th>
+            <th>Status</th>
+            <th>Observações</th>
+          </tr>
+        </thead>
         <tbody>
-          ${list.length === 0 ? '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item</h3></div></td></tr>' :
-            list.map(i=>`
-            <tr>
-              <td><strong>${i.nome}</strong></td>
-              <td><span class="badge badge-reservado">${i.categoria}</span></td>
-              <td>${i.marca||'—'}</td><td>${i.modelo||'—'}</td>
-              <td><code style="font-size:11px;background:var(--gray-100);padding:2px 5px;border-radius:4px">${i.patrimonio}</code></td>
-              <td style="font-size:11px">${i.serie||'—'}</td>
-              <td><code style="font-size:11px">${i.ip||'—'}</code></td>
-              <td>${i.local||'—'}</td>
-              <td>${i.unidade}</td>
-              <td><span style="color:${diasParaVencer(i.garantia)<90?'var(--warning)':'inherit'}">${formatDate(i.garantia)||'—'}</span></td>
-              <td><span class="badge badge-${i.status==='ativo'?'fechado':'suspenso'}">${i.status}</span></td>
-              <td style="font-size:11px;color:var(--gray-500)">${i.obs||'—'}</td>
-            </tr>`).join('')}
+          ${list.length === 0
+            ? '<tr><td colspan="13"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item</h3></div></td></tr>'
+            : list.map((i,idx)=>{
+                const gd=diasParaVencer(i.garantia);
+                const gc=gd<30?'var(--danger)':gd<90?'var(--warning)':'inherit';
+                return `<tr class="${idx%2===1?'rel-row-alt':''}">
+                  <td><strong style="font-size:13px">${i.nome}</strong></td>
+                  <td><span class="badge badge-reservado" style="font-size:11px">${i.categoria}</span></td>
+                  <td style="font-size:12px">${i.tipo||'—'}</td>
+                  <td style="font-size:13px"><strong>${i.marca||'—'}</strong></td>
+                  <td style="font-size:12px">${i.modelo||'—'}</td>
+                  <td><code style="font-size:11px;background:var(--gray-100);padding:2px 5px;border-radius:4px">${i.patrimonio}</code></td>
+                  <td style="font-size:11px;color:var(--gray-500)">${i.serie||'—'}</td>
+                  <td><code style="font-size:11px">${i.ip||'—'}</code></td>
+                  <td style="font-size:12px">${i.local||'—'}</td>
+                  <td style="font-size:12px">${i.unidade}</td>
+                  <td style="font-size:12px;color:${gc};font-weight:600">${formatDate(i.garantia)||'—'}</td>
+                  <td><span class="badge badge-${i.status==='ativo'?'fechado':i.status==='inativo'?'suspenso':'andamento'}" style="font-size:11px">${i.status}</span></td>
+                  <td style="font-size:11px;color:var(--gray-500)">${i.obs||'—'}</td>
+                </tr>`;
+              }).join('')}
         </tbody>
       </table>
     </div>
-  </div>`;
+  </div>
+  ${relPrintFooter()}`;
 }
 
+// ============================================================
+// RELATÓRIO: LICENÇAS
+// ============================================================
 function renderRelLicencas() {
   const f = getRelFiltros();
   let list = STATE.licencas;
   if (f.uni) list = list.filter(l => l.unidade === f.uni);
   if (f.st)  list = list.filter(l => l.status === f.st);
   const totalValor = list.reduce((a,l)=>a+l.valor,0);
+  const totalQtd   = list.reduce((a,l)=>a+(l.quantidade||0),0);
   return `
-  <div class="print-header" style="display:none">
-    <h2>Relatório de Licenças — TI Escola Miró</h2>
-    <p>Gerado em: ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p><hr>
+  ${relPrintHeader('Relatório de Licenças de Software')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
+    ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
   </div>
-  <div class="stats-grid mb-20">
-    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-license"></i></div><div class="stat-info"><div class="stat-number">${list.length}</div><div class="stat-label">Total Licenças</div></div></div>
-    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-check"></i></div><div class="stat-info"><div class="stat-number">${list.filter(l=>l.status==='ativo').length}</div><div class="stat-label">Ativas</div></div></div>
-    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-alert-triangle"></i></div><div class="stat-info"><div class="stat-number">${list.filter(l=>l.status==='vencendo').length}</div><div class="stat-label">A Vencer</div></div></div>
-    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-coin"></i></div><div class="stat-info"><div class="stat-number">R$ ${totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="stat-label">Investimento Total</div></div></div>
+
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Total de Licenças</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${list.filter(l=>l.status==='ativo').length}</div><div class="rel-kpi-label">Ativas</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${list.filter(l=>l.status==='vencendo').length}</div><div class="rel-kpi-label">A Vencer (≤30 dias)</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(l=>l.status==='expirado').length}</div><div class="rel-kpi-label">Expiradas</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${totalQtd}</div><div class="rel-kpi-label">Total de Assentos</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">R$ ${totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="rel-kpi-label">Investimento Total</div></div>
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.filter(l=>diasParaVencer(l.vencimento)<=90&&diasParaVencer(l.vencimento)>0).length}</div><div class="rel-kpi-label">Vencem em 90 dias</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${list.filter(l=>l.vencimento==='9999-12-31').length}</div><div class="rel-kpi-label">Perpétuas</div></div>
   </div>
-  <div class="card">
-    <div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças de Software (${list.length})</span></div>
+
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-license"></i> Licenças de Software — Detalhamento Completo (${list.length})</span>
+    </div>
     <div class="table-wrapper">
-      <table>
-        <thead><tr><th>Software</th><th>Fornecedor</th><th>Tipo</th><th>Qtd Licenças</th><th>Unidade</th><th>Chave</th><th>Compra</th><th>Vencimento</th><th>Dias Restantes</th><th>Valor</th><th>Status</th><th>Observações</th></tr></thead>
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Software</th>
+            <th>Fornecedor</th>
+            <th>Tipo</th>
+            <th>Qtd Licenças</th>
+            <th>Unidade</th>
+            <th>Chave / Código</th>
+            <th>Data Compra</th>
+            <th>Data Vencimento</th>
+            <th>Dias Restantes</th>
+            <th>Valor (R$)</th>
+            <th>Status</th>
+            <th>Observações</th>
+          </tr>
+        </thead>
         <tbody>
-          ${list.length === 0 ? '<tr><td colspan="12"><div class="empty-state"><i class="ti ti-license-off"></i><h3>Nenhuma licença</h3></div></td></tr>' :
-            list.map(l=>{
-              const dias=diasParaVencer(l.vencimento), ac=dias<=30?'var(--danger)':dias<=90?'var(--warning)':'var(--success)';
-              return `<tr>
-                <td><strong>${l.nome}</strong></td>
-                <td>${l.fornecedor}</td>
-                <td><span class="badge badge-reservado">${l.tipo}</span></td>
-                <td><strong>${l.quantidade}</strong></td>
-                <td>${l.unidade}</td>
-                <td style="font-size:11px;font-family:monospace">${l.chave||'—'}</td>
-                <td>${formatDate(l.dataCompra)}</td>
-                <td><strong style="color:${ac}">${formatDate(l.vencimento)}</strong></td>
-                <td><span style="color:${ac};font-weight:700">${dias>=9999?'Perpétua':dias+' dias'}</span></td>
-                <td>R$ ${l.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-                <td><span class="badge badge-${l.status==='ativo'?'fechado':l.status==='vencendo'?'andamento':'suspenso'}">${l.status}</span></td>
-                <td style="font-size:11px;color:var(--gray-500)">${l.obs||'—'}</td>
-              </tr>`;
-            }).join('')}
+          ${list.length === 0
+            ? '<tr><td colspan="13"><div class="empty-state"><i class="ti ti-license-off"></i><h3>Nenhuma licença</h3></div></td></tr>'
+            : list.map((l,i)=>{
+                const dias=diasParaVencer(l.vencimento);
+                const ac=dias<=30?'var(--danger)':dias<=90?'var(--warning)':'var(--success)';
+                const diasLabel=dias>=9999?'Perpétua':`${dias} dias`;
+                return `<tr class="${i%2===1?'rel-row-alt':''}">
+                  <td><strong style="color:var(--primary)">#${l.id}</strong></td>
+                  <td><strong style="font-size:13px">${l.nome}</strong></td>
+                  <td style="font-size:13px">${l.fornecedor}</td>
+                  <td><span class="badge badge-reservado" style="font-size:11px">${l.tipo}</span></td>
+                  <td style="text-align:center"><strong style="font-size:14px">${l.quantidade}</strong></td>
+                  <td style="font-size:12px">${l.unidade}</td>
+                  <td style="font-size:11px;font-family:monospace;color:var(--gray-500)">${l.chave||'—'}</td>
+                  <td style="font-size:12px;white-space:nowrap">${formatDate(l.dataCompra)}</td>
+                  <td style="font-size:12px;white-space:nowrap"><strong style="color:${ac}">${formatDate(l.vencimento)}</strong></td>
+                  <td style="font-size:12px;white-space:nowrap"><strong style="color:${ac}">${diasLabel}</strong></td>
+                  <td style="font-size:12px;white-space:nowrap;text-align:right"><strong>R$ ${l.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong></td>
+                  <td><span class="badge badge-${l.status==='ativo'?'fechado':l.status==='vencendo'?'andamento':'suspenso'}" style="font-size:11px">${l.status}</span></td>
+                  <td style="font-size:11px;color:var(--gray-500)">${l.obs||'—'}</td>
+                </tr>`;
+              }).join('')}
         </tbody>
+        <tfoot>
+          <tr style="background:var(--gray-50);font-weight:700">
+            <td colspan="4" style="padding:10px 14px;font-size:13px">TOTAIS</td>
+            <td style="text-align:center;padding:10px 14px">${totalQtd}</td>
+            <td colspan="5" style="padding:10px 14px"></td>
+            <td style="text-align:right;padding:10px 14px;color:var(--primary)">R$ ${totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+            <td colspan="2" style="padding:10px 14px"></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
-  </div>`;
+  </div>
+  ${relPrintFooter()}`;
+}
+
+// ============================================================
+// RELATÓRIO: EQUIPAMENTOS
+// ============================================================
+function renderRelEquipamentos() {
+  const f = getRelFiltros();
+  let list = STATE.equipamentos;
+  if (f.uni) list = list.filter(e => e.unidade === f.uni);
+  if (f.st)  list = list.filter(e => e.status === f.st);
+  const qtdTotal = list.reduce((a,e)=>a+(e.quantidade||1),0);
+  return `
+  ${relPrintHeader('Relatório de Equipamentos')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
+    ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
+  </div>
+
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Tipos Cadastrados</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${qtdTotal}</div><div class="rel-kpi-label">Quantidade Total</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${list.filter(e=>e.status==='disponivel').length}</div><div class="rel-kpi-label">Disponíveis</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${list.filter(e=>e.status==='reservado').length}</div><div class="rel-kpi-label">Reservados</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(e=>e.status==='manutencao').length}</div><div class="rel-kpi-label">Em Manutenção</div></div>
+    <div class="rel-kpi gray"><div class="rel-kpi-num">${list.filter(e=>e.status==='inativo').length}</div><div class="rel-kpi-label">Inativos</div></div>
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.filter(e=>e.unidade==='Matriz').length}</div><div class="rel-kpi-label">Unidade Matriz</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">${list.filter(e=>e.unidade==='Ensino Médio').length}</div><div class="rel-kpi-label">Ensino Médio</div></div>
+  </div>
+
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-devices"></i> Equipamentos — Detalhamento Completo (${list.length} registros | ${qtdTotal} unidades)</span>
+    </div>
+    <div class="table-wrapper">
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>Nome do Equipamento</th>
+            <th>Tipo</th>
+            <th>Marca</th>
+            <th>Modelo</th>
+            <th>Nº Patrimônio</th>
+            <th>Nº de Série</th>
+            <th>Local / Sala</th>
+            <th>Unidade</th>
+            <th>Quantidade</th>
+            <th>Status</th>
+            <th>Descrição / Especificações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.length === 0
+            ? '<tr><td colspan="11"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>'
+            : list.map((e,i)=>`
+            <tr class="${i%2===1?'rel-row-alt':''}">
+              <td><strong style="font-size:13px">${e.nome}</strong></td>
+              <td><span class="badge badge-reservado" style="font-size:11px">${e.tipo}</span></td>
+              <td style="font-size:13px"><strong>${e.marca||'—'}</strong></td>
+              <td style="font-size:12px">${e.modelo||'—'}</td>
+              <td><code style="font-size:11px;background:var(--gray-100);padding:2px 5px;border-radius:4px">${e.patrimonio}</code></td>
+              <td style="font-size:11px;color:var(--gray-500)">${e.serie||'—'}</td>
+              <td style="font-size:12px">${e.local||'—'}</td>
+              <td style="font-size:12px">${e.unidade}</td>
+              <td style="text-align:center"><strong style="font-size:15px;color:var(--primary)">${e.quantidade||1}</strong></td>
+              <td>${equipStatus(e.status)}</td>
+              <td style="font-size:12px;color:var(--gray-500)">${e.descricao||'—'}</td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--gray-50);font-weight:700">
+            <td colspan="8" style="padding:10px 14px;font-size:13px">TOTAL DE UNIDADES</td>
+            <td style="text-align:center;padding:10px 14px;font-size:16px;color:var(--primary)">${qtdTotal}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  ${relPrintFooter()}`;
 }
 
 function renderRelatorioCharts() {
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+  // Chart: chamados por mês
   const ctx1=document.getElementById('chart-mensal');
-  if(ctx1) new Chart(ctx1,{type:'line',data:{labels:meses,datasets:[{label:'Chamados',data:meses.map((_,i)=>Math.floor(Math.random()*8)+1),borderColor:'#0073c8',backgroundColor:'rgba(0,115,200,.08)',tension:.4,fill:true,pointRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+  if(ctx1) new Chart(ctx1,{type:'line',data:{labels:meses,datasets:[{label:'Chamados',data:meses.map(()=>Math.floor(Math.random()*8)+1),borderColor:'#0073c8',backgroundColor:'rgba(0,115,200,.1)',tension:.4,fill:true,pointRadius:5,pointBackgroundColor:'#0073c8'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+
+  // Chart: status chamados
+  const ctx_st=document.getElementById('chart-status-rel');
+  if(ctx_st) new Chart(ctx_st,{type:'doughnut',data:{labels:['Aberto','Em Andamento','Fechado','Suspenso'],datasets:[{data:[STATE.chamados.filter(c=>c.status==='aberto').length,STATE.chamados.filter(c=>c.status==='andamento').length,STATE.chamados.filter(c=>c.status==='fechado').length,STATE.chamados.filter(c=>c.status==='suspenso').length],backgroundColor:['#e74c3c','#e67e22','#27ae60','#95a5a6'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
+
+  // Chart: prioridade
   const ctx2=document.getElementById('chart-prio');
-  if(ctx2) new Chart(ctx2,{type:'pie',data:{labels:['Alta','Média','Baixa'],datasets:[{data:[STATE.chamados.filter(c=>c.prioridade==='Alta').length,STATE.chamados.filter(c=>c.prioridade==='Media').length,STATE.chamados.filter(c=>c.prioridade==='Baixa').length],backgroundColor:['#e74c3c','#e67e22','#27ae60'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  if(ctx2) new Chart(ctx2,{type:'pie',data:{labels:['Alta','Média','Baixa'],datasets:[{data:[STATE.chamados.filter(c=>c.prioridade==='Alta').length,STATE.chamados.filter(c=>c.prioridade==='Media').length,STATE.chamados.filter(c=>c.prioridade==='Baixa').length],backgroundColor:['#e74c3c','#e67e22','#27ae60'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
+
+  // Chart: por categoria
+  const cats_={};STATE.chamados.forEach(c=>{cats_[c.categoria]=(cats_[c.categoria]||0)+1;});
+  const ctx_cat=document.getElementById('chart-cat-rel');
+  if(ctx_cat) new Chart(ctx_cat,{type:'bar',data:{labels:Object.keys(cats_),datasets:[{label:'Chamados',data:Object.values(cats_),backgroundColor:['#0073c8','#27ae60','#e67e22','#e74c3c','#7b1fa2','#009688'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+
+  // Chart: uso por equipamento
   const eu={};STATE.reservas.forEach(r=>{eu[r.equipamentoTipo]=(eu[r.equipamentoTipo]||0)+1;});
   const ctx3=document.getElementById('chart-equip-uso');
   if(ctx3) new Chart(ctx3,{type:'bar',data:{labels:Object.keys(eu),datasets:[{label:'Reservas',data:Object.values(eu),backgroundColor:'#0073c8',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+
+  // Chart: chamados por usuário
   const uu={};STATE.chamados.forEach(c=>{const n=c.solicitante.split(' ')[0];uu[n]=(uu[n]||0)+1;});
   const ctx4=document.getElementById('chart-user');
-  if(ctx4) new Chart(ctx4,{type:'bar',data:{labels:Object.keys(uu),datasets:[{label:'Chamados',data:Object.values(uu),backgroundColor:['#0073c8','#27ae60','#e67e22'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  if(ctx4) new Chart(ctx4,{type:'bar',data:{labels:Object.keys(uu),datasets:[{label:'Chamados',data:Object.values(uu),backgroundColor:['#0073c8','#27ae60','#e67e22','#7b1fa2'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+
+  // Chart: por unidade
   const unid={Matriz:STATE.chamados.filter(c=>(c.unidade||'Matriz')==='Matriz').length,'Ensino Médio':STATE.chamados.filter(c=>c.unidade==='Ensino Médio').length};
   const ctx5=document.getElementById('chart-unidade');
-  if(ctx5) new Chart(ctx5,{type:'doughnut',data:{labels:Object.keys(unid),datasets:[{data:Object.values(unid),backgroundColor:['#0073c8','#7b1fa2'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  if(ctx5) new Chart(ctx5,{type:'doughnut',data:{labels:Object.keys(unid),datasets:[{data:Object.values(unid),backgroundColor:['#0073c8','#7b1fa2'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
+
+  // Chart: licenças dias restantes
   const ctx6=document.getElementById('chart-lic');
   if(ctx6) new Chart(ctx6,{type:'bar',data:{labels:STATE.licencas.map(l=>l.nome.split(' ').slice(0,2).join(' ')),datasets:[{label:'Dias restantes',data:STATE.licencas.map(l=>Math.min(diasParaVencer(l.vencimento),730)),backgroundColor:STATE.licencas.map(l=>diasParaVencer(l.vencimento)<=30?'#e74c3c':diasParaVencer(l.vencimento)<=90?'#e67e22':'#27ae60'),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+
+  // Chart: equipamentos por status
+  const eq_st={Disponível:STATE.equipamentos.filter(e=>e.status==='disponivel').length,Reservado:STATE.equipamentos.filter(e=>e.status==='reservado').length,Manutenção:STATE.equipamentos.filter(e=>e.status==='manutencao').length,Inativo:STATE.equipamentos.filter(e=>e.status==='inativo').length};
+  const ctx_eq=document.getElementById('chart-equip-status');
+  if(ctx_eq) new Chart(ctx_eq,{type:'doughnut',data:{labels:Object.keys(eq_st),datasets:[{data:Object.values(eq_st),backgroundColor:['#27ae60','#0073c8','#e67e22','#95a5a6'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
+
+  // Chart: reservas por mês
+  const ctx_rm=document.getElementById('chart-res-mensal');
+  if(ctx_rm) new Chart(ctx_rm,{type:'bar',data:{labels:meses,datasets:[{label:'Reservas',data:meses.map(()=>Math.floor(Math.random()*6)+1),backgroundColor:'rgba(0,115,200,.7)',borderRadius:6},{label:'Chamados',data:meses.map(()=>Math.floor(Math.random()*5)+1),backgroundColor:'rgba(231,76,60,.7)',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
 }
-function gerarRelatorio() {
-  const tipo = document.getElementById('rel-tipo')?.value || 'geral';
-  const el = document.getElementById('rel-content');
-  if (!el) return;
-  const map = { geral: renderRelGeral, chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas };
-  if (map[tipo]) { el.innerHTML = map[tipo](); if (tipo === 'geral') setTimeout(renderRelatorioCharts, 100); }
-  toast('Relatório gerado!', 'success');
-}
+
 
 // ===== MODALS: RESERVA =====
 function openModalReserva(reservaId=null, preData=null) {

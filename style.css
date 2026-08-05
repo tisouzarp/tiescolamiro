@@ -1304,3 +1304,246 @@ tbody td {
   font-weight: 700;
   color: var(--primary);
 }
+
+/* ============================================================
+   MÓDULO DE RELATÓRIOS — ESTILOS PROFISSIONAIS
+   ============================================================ */
+
+/* ===== TOOLBAR ===== */
+.rel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+}
+
+/* ===== MODE SWITCH ===== */
+.rel-mode-switch {
+  display: flex;
+  background: var(--gray-100);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 2px;
+}
+.rel-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  background: transparent;
+  color: var(--gray-500);
+  transition: var(--transition);
+}
+.rel-mode-btn.active {
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 2px 6px rgba(0,115,200,.3);
+}
+.rel-mode-btn:not(.active):hover { background: var(--gray-200); color: var(--gray-700); }
+
+/* ===== CABEÇALHO INSTITUCIONAL (print + tela) ===== */
+.rel-print-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 24px;
+  background: var(--primary);
+  border-radius: var(--radius-lg);
+  margin-bottom: 20px;
+  color: white;
+}
+.rel-print-info h1 {
+  font-size: 20px;
+  font-weight: 800;
+  color: white;
+  margin-bottom: 2px;
+}
+.rel-print-info h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255,255,255,.85);
+  margin-bottom: 6px;
+}
+.rel-print-info p {
+  font-size: 12px;
+  color: rgba(255,255,255,.7);
+}
+.rel-print-logo {
+  background: white;
+  border-radius: 10px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+}
+
+/* ===== FILTROS APLICADOS ===== */
+.rel-filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--gray-600);
+  font-weight: 500;
+}
+.rel-filter-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid var(--primary-mid);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* ===== KPI GRID ===== */
+.rel-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+@media (max-width: 900px) { .rel-kpi-grid { grid-template-columns: repeat(2,1fr); } }
+
+.rel-kpi {
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rel-kpi.blue   { background: var(--primary-light); border-color: var(--primary-mid); }
+.rel-kpi.green  { background: var(--success-bg);    border-color: #a7f3c0; }
+.rel-kpi.red    { background: var(--danger-bg);     border-color: #fca5a5; }
+.rel-kpi.orange { background: var(--warning-bg);    border-color: #fcd34d; }
+.rel-kpi.teal   { background: #e0f7f7;              border-color: #99e6e6; }
+.rel-kpi.purple { background: #f3e5f5;              border-color: #d8b4fe; }
+.rel-kpi.gray   { background: var(--gray-100);      border-color: var(--gray-300); }
+
+.rel-kpi-num {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--gray-900);
+}
+.rel-kpi.blue   .rel-kpi-num { color: var(--primary); }
+.rel-kpi.green  .rel-kpi-num { color: var(--success); }
+.rel-kpi.red    .rel-kpi-num { color: var(--danger); }
+.rel-kpi.orange .rel-kpi-num { color: var(--warning); }
+.rel-kpi.teal   .rel-kpi-num { color: #009688; }
+.rel-kpi.purple .rel-kpi-num { color: #7b1fa2; }
+
+.rel-kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* ===== TABELA DE RELATÓRIO ===== */
+.rel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.rel-table thead th {
+  background: var(--gray-800);
+  color: white;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+.rel-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  vertical-align: middle;
+}
+.rel-table tbody tr:hover { background: var(--gray-50); }
+.rel-row-alt { background: #f8fafc !important; }
+.rel-row-alt:hover { background: var(--primary-light) !important; }
+.rel-table tfoot td {
+  border-top: 2px solid var(--gray-300);
+  font-weight: 700;
+}
+
+/* ===== PRIORIDADE BADGE ===== */
+.rel-prio {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.rel-prio-alta   { background: #fee2e2; color: #991b1b; }
+.rel-prio-media  { background: #fef3c7; color: #92400e; }
+.rel-prio-baixa  { background: #d1fae5; color: #065f46; }
+
+/* ===== RODAPÉ DE IMPRESSÃO ===== */
+.rel-print-footer {
+  margin-top: 24px;
+  padding: 14px 0 0;
+  border-top: 2px solid var(--gray-200);
+  text-align: center;
+  font-size: 11px;
+  color: var(--gray-400);
+}
+.rel-print-footer p { margin-bottom: 2px; }
+
+/* ===== PRINT STYLES — PROFISSIONAL ===== */
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  .sidebar, .main-header, .no-print, .rel-toolbar, .filter-bar, .report-filters { display: none !important; }
+  .main-content { margin-left: 0 !important; }
+  .page-content { padding: 10px !important; }
+
+  .rel-print-header {
+    background: #0073c8 !important;
+    -webkit-print-color-adjust: exact;
+  }
+  .rel-print-header h1, .rel-print-header h2, .rel-print-header p { color: white !important; }
+
+  .rel-kpi-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 8px !important; }
+  .rel-kpi { padding: 10px 12px !important; }
+  .rel-kpi-num { font-size: 20px !important; }
+
+  .card { break-inside: avoid; box-shadow: none !important; border: 1px solid #ccc !important; margin-bottom: 12px !important; }
+  .card-header { background: #f0f0f0 !important; }
+
+  .rel-table { font-size: 10px !important; }
+  .rel-table thead th { background: #334155 !important; color: white !important; padding: 6px 8px !important; font-size: 9px !important; }
+  .rel-table tbody td { padding: 5px 8px !important; }
+  .rel-row-alt { background: #f8fafc !important; }
+
+  .rel-print-footer { color: #333 !important; font-size: 10px !important; }
+  .main-footer { display: block !important; }
+
+  .badge { border: 1px solid #ccc; }
+  .rel-prio { border: 1px solid #ccc; }
+
+  .grid-2 { grid-template-columns: repeat(2,1fr) !important; break-inside: avoid; }
+  .chart-container { height: 180px !important; }
+}
