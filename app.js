@@ -67,7 +67,7 @@ function openModal(html, id='main-modal') {
   let o = $(`#${id}`); if(o) o.remove();
   o = document.createElement('div'); o.id=id; o.className='modal-overlay'; o.innerHTML=html;
   document.body.appendChild(o);
-  o.addEventListener('click', e=>{ if(e.target===o) closeModal(id); });
+  o.addEventListener('click', e=>{ if(e.target===o && e.button===0) closeModal(id); });
 }
 function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
 
