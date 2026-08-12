@@ -619,7 +619,7 @@ function renderCalendario() {
 function openModalReservaData(ds) { openModalReserva(null, ds); }
 
 // ===== RESERVAS =====
-const CARGOS=['Professor(a)','Coordenador(a)','Assistente','Estagiário(a)','Administrativo'];
+const CARGOS=['Professor(a)','Coordenador(a)','Assistente','Estagiário(a)','Administrativo','Aluno'];
 const SALAS=['Grupo 1','Grupo 2','Grupo 3','Grupo 4','Grupo 5','1º Ano','2º Ano','3º Ano','4º Ano','5º Ano','6º Ano','7º Ano','8º Ano','9º Ano','1º Ano EM','2º Ano EM','3º Ano EM','Aula de Apoio','Outro'];
 const HORAS=(()=>{const h=[];for(let i=6;i<24;i++)for(let m=0;m<60;m+=5)h.push(`${String(i).padStart(2,'0')}:${String(m).padStart(2,'0')}`);return h;})();
 
