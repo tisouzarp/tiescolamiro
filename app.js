@@ -1884,7 +1884,11 @@ function updateEquipList(selectedEquip='') {
   if(tipo==='Outro'){ sel.innerHTML='<option value="outro">Outro (especificar abaixo)</option>'; if(og) og.style.display=''; return; }
   if(og) og.style.display='none';
   const list=STATE.equipamentos.filter(e=>e.tipo===tipo&&(e.status==='disponivel'||e.status==='reservado'));
-  sel.innerHTML=`<option value="">Selecione...</option>${list.map(e=>`<option value="${e.id}" ${e.nome===selectedEquip?'selected':''}>${e.nome} (${e.status})</option>`).join('')}<option value="outro">Outro (especificar)</option>`;
+  // Garante que o equipamento já salvo apareça mesmo que esteja com outro status
+  const jaEstaNaLista=list.some(e=>e.nome===selectedEquip);
+  const equipSalvo=selectedEquip&&!jaEstaNaLista?STATE.equipamentos.find(e=>e.nome===selectedEquip):null;
+  const extraOption=equipSalvo?`<option value="${equipSalvo.id}" selected>${equipSalvo.nome} (${equipSalvo.status})</option>`:'';
+  sel.innerHTML=`<option value="">Selecione...</option>${extraOption}${list.map(e=>`<option value="${e.id}" ${e.nome===selectedEquip?'selected':''}>${e.nome} (${e.status})</option>`).join('')}<option value="outro">Outro (especificar)</option>`;
 }
 function checkOutroEquip(){ const sel=$('#res-equip'), og=$('#res-outro-equip-group'); if(og) og.style.display=sel?.value==='outro'?'':'none'; }
 function toggleOutroSala(sel){ const g=$('#res-outro-sala-group'); if(g) g.style.display=sel.value==='Outro'?'':'none'; }
@@ -1892,9 +1896,18 @@ function changeQty(d){ const i=$('#res-qtd'); if(i) i.value=Math.max(1,Math.min(
 function editReserva(id){ openModalReserva(id); }
 
 function salvarReserva(id) {
-  const tipo=$('#res-tipo')?.value;
+  const reservaAtual = id ? STATE.reservas.find(r=>r.id===id) : null;
+  const tipo=$('#res-tipo')?.value || (reservaAtual?.equipamentoTipo||'');
   const equipVal=$('#res-equip')?.value;
-  const equipNome=equipVal==='outro'?($('#res-outro-equip')?.value||'').trim():(STATE.equipamentos.find(e=>e.id==equipVal)?.nome||equipVal);
+  // Se o campo equipamento estiver vazio mas estivermos editando, mantém o nome já salvo
+  let equipNome='';
+  if(equipVal==='outro') {
+    equipNome=($('#res-outro-equip')?.value||'').trim();
+  } else if(equipVal && equipVal!=='') {
+    equipNome=STATE.equipamentos.find(e=>e.id==equipVal)?.nome||equipVal;
+  } else if(reservaAtual) {
+    equipNome=reservaAtual.equipamento; // mantém o equipamento já salvo
+  }
   const cargo=$('#res-cargo')?.value, nome=$('#res-nome')?.value.trim();
   const salaVal=$('#res-sala')?.value, sala=salaVal==='Outro'?($('#res-outro-sala')?.value||'').trim():salaVal;
   const data=$('#res-data')?.value, hinicio=$('#res-hinicio')?.value, hfim=$('#res-hfim')?.value;
@@ -1957,8 +1970,14 @@ function openModalChamado(chamadoId=null) {
 function editChamado(id){ openModalChamado(id); }
 
 function salvarChamado(id) {
-  const titulo=$('#ch-titulo')?.value.trim(), cat=$('#ch-cat')?.value, prio=$('#ch-prio')?.value;
-  const sol=$('#ch-sol')?.value.trim(), atrib=$('#ch-atrib')?.value, desc=$('#ch-desc')?.value.trim(), unidade=$('#ch-unidade')?.value||'Matriz';
+  const chamadoAtual = id ? STATE.chamados.find(c=>c.id===id) : null;
+  const titulo=($('#ch-titulo')?.value||'').trim() || (chamadoAtual?.titulo||'');
+  const cat=$('#ch-cat')?.value || (chamadoAtual?.categoria||'');
+  const prio=$('#ch-prio')?.value || (chamadoAtual?.prioridade||'');
+  const sol=($('#ch-sol')?.value||'').trim() || (chamadoAtual?.solicitante||'');
+  const atrib=$('#ch-atrib')?.value ?? (chamadoAtual?.atribuido||'');
+  const desc=($('#ch-desc')?.value||'').trim() || (chamadoAtual?.descricao||'');
+  const unidade=$('#ch-unidade')?.value || (chamadoAtual?.unidade||'Matriz');
   if(!titulo||!cat||!prio||!sol||!desc){ toast('Preencha todos os campos obrigatórios.','error'); return; }
   if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c) Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,atualizado:dateNow()}); toast('Chamado atualizado!'); }
   else { STATE.chamados.push({id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,status:'aberto',criado:dateNow(),atualizado:dateNow()}); addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); }
