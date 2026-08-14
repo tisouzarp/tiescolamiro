@@ -1547,3 +1547,88 @@ tbody td {
   .grid-2 { grid-template-columns: repeat(2,1fr) !important; break-inside: avoid; }
   .chart-container { height: 180px !important; }
 }
+
+/* ===== ACOMPANHAMENTOS / TIMELINE ===== */
+.acomp-item {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  position: relative;
+}
+.acomp-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 38px;
+  bottom: -8px;
+  width: 2px;
+  background: var(--gray-200);
+}
+
+.acomp-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.acomp-observacao .acomp-avatar { background: var(--primary); }
+.acomp-solucao    .acomp-avatar { background: var(--success); }
+.acomp-pendencia  .acomp-avatar { background: var(--warning); }
+.acomp-retorno    .acomp-avatar { background: #7b1fa2; }
+
+.acomp-body {
+  flex: 1;
+  background: white;
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.acomp-observacao .acomp-body { border-color: var(--primary-mid); }
+.acomp-solucao    .acomp-body { border-color: #a7f3c0; }
+.acomp-pendencia  .acomp-body { border-color: #fcd34d; }
+.acomp-retorno    .acomp-body { border-color: #d8b4fe; }
+
+.acomp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  font-size: 12px;
+  background: var(--gray-50);
+}
+
+.acomp-tipo-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.acomp-tipo-observacao { background: var(--primary-light); color: var(--primary); }
+.acomp-tipo-solucao    { background: var(--success-bg);    color: var(--success); }
+.acomp-tipo-pendencia  { background: var(--warning-bg);    color: var(--warning); }
+.acomp-tipo-retorno    { background: #f3e5f5;              color: #7b1fa2; }
+
+.acomp-texto {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--gray-700);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}

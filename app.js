@@ -42,7 +42,8 @@ const STATE = {
     { id: 2, nome: 'Adobe Creative Cloud', fornecedor: 'Adobe', tipo: 'Desktop', quantidade: 5, chave: 'ADOBE-XXXXX', dataCompra: '2024-03-01', vencimento: '2025-06-15', valor: 1800.00, status: 'vencendo', unidade: 'Matriz', obs: 'Laboratório de artes' },
     { id: 3, nome: 'Windows 11 Pro', fornecedor: 'Microsoft', tipo: 'OEM', quantidade: 20, chave: 'WIN11-XXXXX', dataCompra: '2023-06-01', vencimento: '9999-12-31', valor: 8000.00, status: 'ativo', unidade: 'Ensino Médio', obs: 'Licenças perpétuas' },
   ],
-  nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4 },
+  nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1 },
+  acompanhamentos: [], // { id, chamadoId, texto, autor, tipo, criado }
 };
 
 function dateNow() { return new Date().toISOString().split('T')[0]; }
@@ -74,7 +75,7 @@ function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
 // ===== PERSISTENCE =====
 function saveState() {
   try {
-    localStorage.setItem('miro_ti_v2', JSON.stringify({ reservas:STATE.reservas, chamados:STATE.chamados, equipamentos:STATE.equipamentos, users:STATE.users, inventario:STATE.inventario, licencas:STATE.licencas, nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30) }));
+    localStorage.setItem('miro_ti_v2', JSON.stringify({ reservas:STATE.reservas, chamados:STATE.chamados, equipamentos:STATE.equipamentos, users:STATE.users, inventario:STATE.inventario, licencas:STATE.licencas, nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30), acompanhamentos:STATE.acompanhamentos }));
     if (STATE.currentUser) localStorage.setItem('miro_ti_session', JSON.stringify({ userId: STATE.currentUser.id, page: STATE.currentPage }));
     else localStorage.removeItem('miro_ti_session');
   } catch(e) {}
@@ -82,7 +83,7 @@ function saveState() {
 function loadState() {
   try {
     const s = localStorage.getItem('miro_ti_v2');
-    if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
+    if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications','acompanhamentos'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
     const sess = localStorage.getItem('miro_ti_session');
     if (sess) {
       const { userId, page } = JSON.parse(sess);
@@ -718,6 +719,7 @@ function renderChamadosRows(list) {
       <div class="actions-menu">
         <button class="btn-icon" onclick="toggleMenu(this)"><i class="ti ti-dots-vertical"></i></button>
         <div class="actions-dropdown" style="display:none">
+          <button onclick="openModalAcompanhamento(${c.id})"><i class="ti ti-message-circle"></i> Acompanhamentos</button>
           <button onclick="editChamado(${c.id})"><i class="ti ti-edit"></i> Editar</button>
           <button onclick="changeChamadoStatus(${c.id},'andamento');renderPage(STATE.currentPage)"><i class="ti ti-loader"></i> Em Andamento</button>
           <button onclick="changeChamadoStatus(${c.id},'pendente');renderPage(STATE.currentPage)"><i class="ti ti-clock"></i> Pendente</button>
@@ -1788,7 +1790,7 @@ function renderRelatorioCharts() {
 // ===== MODALS: RESERVA =====
 function openModalReserva(reservaId=null, preData=null) {
   const r=reservaId?STATE.reservas.find(r=>r.id===reservaId):null;
-  const TIPOS=[...new Set(STATE.equipamentos.map(e=>e.tipo)),'Outro'];
+  const TIPOS=['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora',...[...new Set(STATE.equipamentos.map(e=>e.tipo))].filter(t=>!['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora'].includes(t)),'Outro'];
   openModal(`
   <div class="modal modal-lg">
     <div class="modal-header">
@@ -1935,7 +1937,7 @@ function openModalChamado(chamadoId=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Categoria</label>
-          <select id="ch-cat"><option value="">Selecione...</option>${['Hardware','Software','Rede','Impressora','Acesso/Senha','E-mail','Telefone IP','Câmera','Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
+          <select id="ch-cat"><option value="">Selecione...</option>${['Hardware','Software','Rede','Impressora','Acesso/Senha','E-mail','Telefone IP','Câmera','Sistema','Vídeo','Áudio/Som','Office','Internet/Web','Liberar Acesso','Canvas','Sophia','Verificar Vírus','Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
         </div>
         <div class="form-group">
           <label class="required">Prioridade</label>
@@ -1946,7 +1948,7 @@ function openModalChamado(chamadoId=null) {
         <div class="form-group">
           <label class="required">Solicitante</label>
           <div style="position:relative">
-          <input type="text" id="ch-sol" value="${c?.solicitante||STATE.currentUser.nome}" autocomplete="off" oninput="showUserSuggest(this,'ch-sol-list')" />
+          <input type="text" id="ch-sol" value="${c?.solicitante||''}" autocomplete="off" oninput="showUserSuggest(this,'ch-sol-list')" placeholder="Nome do solicitante" />
           <div id="ch-sol-list" class="autocomplete-list" style="display:none"></div>
         </div>
         </div>
@@ -2338,6 +2340,139 @@ function renderUnidadeCharts(unidade) {
 
 function openModalReservaUnidade(unidade) { openModalReserva(null, null, unidade); }
 function openModalChamadoUnidade(unidade) { openModalChamado(null, unidade); }
+
+// ===== ACOMPANHAMENTOS DE CHAMADO =====
+function openModalAcompanhamento(chamadoId) {
+  const c = STATE.chamados.find(c => c.id === chamadoId);
+  if (!c) return;
+  const lista = STATE.acompanhamentos.filter(a => a.chamadoId === chamadoId).sort((a,b)=>b.id-a.id);
+  const isAdmin = STATE.currentUser.role === 'admin';
+
+  openModal(`
+  <div class="modal modal-lg" style="max-width:680px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white">
+        <i class="ti ti-message-circle" style="color:var(--primary-mid)"></i>
+        Chamado #${c.id} — ${c.titulo}
+      </span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+
+    <!-- DETALHES DO CHAMADO -->
+    <div style="padding:16px 24px;background:var(--gray-50);border-bottom:1px solid var(--gray-200)">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:12px">
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Status</span><br>
+          <span class="badge badge-${c.status}" style="margin-top:4px;display:inline-flex">${c.status}</span></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Prioridade</span><br>
+          <strong style="color:${prioColor(c.prioridade)}">${c.prioridade}</strong></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Categoria</span><br>
+          <strong>${c.categoria}</strong></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Solicitante</span><br>
+          <strong>${c.solicitante}</strong></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Atribuído</span><br>
+          <strong>${c.atribuido||'—'}</strong></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Unidade</span><br>
+          <strong>${c.unidade||'Matriz'}</strong></div>
+      </div>
+      <div style="margin-top:10px;padding:10px 12px;background:white;border-radius:6px;border:1px solid var(--gray-200);font-size:13px;color:var(--gray-600);line-height:1.5">
+        <strong style="font-size:11px;color:var(--gray-400);text-transform:uppercase">Descrição:</strong><br>${c.descricao}
+      </div>
+    </div>
+
+    <!-- TIMELINE DE ACOMPANHAMENTOS -->
+    <div class="modal-body" style="padding:20px 24px;max-height:320px;overflow-y:auto" id="acomp-lista">
+      ${lista.length === 0
+        ? `<div style="text-align:center;padding:30px;color:var(--gray-400)">
+            <i class="ti ti-message-off" style="font-size:36px;display:block;margin-bottom:8px"></i>
+            <p style="font-size:13px">Nenhum acompanhamento ainda.<br>Adicione o primeiro abaixo.</p>
+           </div>`
+        : lista.map(a => `
+          <div class="acomp-item acomp-${a.tipo}">
+            <div class="acomp-avatar">${initials(a.autor)}</div>
+            <div class="acomp-body">
+              <div class="acomp-header">
+                <strong>${a.autor}</strong>
+                <span class="acomp-tipo-badge acomp-tipo-${a.tipo}">${{observacao:'Observação',solucao:'Solução',pendencia:'Pendência',retorno:'Retorno ao usuário'}[a.tipo]||a.tipo}</span>
+                <span style="margin-left:auto;font-size:11px;color:var(--gray-400)">${formatDate(a.criado)} às ${a.hora}</span>
+              </div>
+              <div class="acomp-texto">${a.texto.replace(/\n/g,'<br>')}</div>
+            </div>
+          </div>`).join('')}
+    </div>
+
+    <!-- FORMULÁRIO DE NOVO ACOMPANHAMENTO -->
+    <div style="padding:16px 24px;border-top:2px solid var(--gray-200);background:white">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Tipo de interação</label>
+          <select id="acomp-tipo" style="width:100%;padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;outline:none">
+            <option value="observacao">💬 Observação</option>
+            <option value="solucao">✅ Solução / Resolução</option>
+            <option value="pendencia">⏳ Pendência</option>
+            <option value="retorno">📢 Retorno ao usuário</option>
+          </select>
+        </div>
+        ${isAdmin ? `<div>
+          <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Alterar status do chamado</label>
+          <select id="acomp-status" style="width:100%;padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;outline:none">
+            <option value="">— Manter status atual —</option>
+            <option value="aberto">Aberto</option>
+            <option value="andamento">Em Andamento</option>
+            <option value="pendente">Pendente</option>
+            <option value="suspenso">Suspenso</option>
+            <option value="fechado">Fechado / Resolvido</option>
+          </select>
+        </div>` : '<div></div>'}
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Mensagem <span style="color:var(--danger)">*</span></label>
+        <textarea id="acomp-texto" rows="3" placeholder="Descreva a interação, solução aplicada, pendência encontrada..." style="width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;resize:vertical;outline:none;transition:.15s" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--gray-200)'"></textarea>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+        <span style="font-size:12px;color:var(--gray-400)"><i class="ti ti-user" style="font-size:13px"></i> ${STATE.currentUser.nome}</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+          <button class="btn btn-primary" onclick="salvarAcompanhamento(${chamadoId})">
+            <i class="ti ti-send"></i> Registrar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>`);
+}
+
+function salvarAcompanhamento(chamadoId) {
+  const texto = $('#acomp-texto')?.value.trim();
+  const tipo  = $('#acomp-tipo')?.value || 'observacao';
+  const novoStatus = $('#acomp-status')?.value || '';
+  if (!texto) { toast('Digite a mensagem do acompanhamento.', 'error'); return; }
+
+  const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const novoAcomp = {
+    id: STATE.nextId.acompanhamento++,
+    chamadoId,
+    texto,
+    tipo,
+    autor: STATE.currentUser.nome,
+    criado: dateNow(),
+    hora,
+  };
+  STATE.acompanhamentos.push(novoAcomp);
+
+  // Alterar status se solicitado
+  if (novoStatus) {
+    const c = STATE.chamados.find(c => c.id === chamadoId);
+    if (c) { c.status = novoStatus; c.atualizado = dateNow(); }
+  }
+
+  saveState();
+  addNotification(`Acompanhamento #${chamadoId}`, `${STATE.currentUser.nome}: ${texto.slice(0,40)}...`, 'ti-message-circle');
+  toast('Acompanhamento registrado!');
+  closeModal();
+  // Reabrir o modal atualizado
+  openModalAcompanhamento(chamadoId);
+  renderPage(STATE.currentPage);
+}
 
 // ===== AUTOCOMPLETE USUÁRIOS =====
 function showUserSuggest(input, listId) {
