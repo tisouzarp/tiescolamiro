@@ -68,7 +68,16 @@ function openModal(html, id='main-modal') {
   let o = $(`#${id}`); if(o) o.remove();
   o = document.createElement('div'); o.id=id; o.className='modal-overlay'; o.innerHTML=html;
   document.body.appendChild(o);
-  o.addEventListener('click', e=>{ if(e.target===o && e.button===0) closeModal(id); });
+  o.addEventListener('mousedown', e=>{
+    // Só fecha se: botão esquerdo (0) E clique direto no overlay escuro (não em filhos)
+    if(e.button===0 && e.target===o) {
+      // Aguarda mouseup para confirmar que não foi início de seleção de texto
+      const onUp = ev => { if(ev.target===o) closeModal(id); o.removeEventListener('mouseup',onUp); };
+      o.addEventListener('mouseup', onUp);
+    }
+  });
+  // Impede que botão direito feche o modal
+  o.addEventListener('contextmenu', e=>{ if(e.target===o) e.stopPropagation(); });
 }
 function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
 
@@ -1828,7 +1837,7 @@ function openModalReserva(reservaId=null, preData=null) {
         <div class="form-group">
           <label class="required">Nome do Solicitante</label>
           <div style="position:relative">
-          <input type="text" id="res-nome" placeholder="Nome completo" value="${r?.solicitante||STATE.currentUser.nome}" autocomplete="off" oninput="showUserSuggest(this,'res-nome-list')" />
+          <input type="text" id="res-nome" placeholder="Nome do solicitante" value="${r?.solicitante||''}" autocomplete="off" oninput="showUserSuggest(this,'res-nome-list')" />
           <div id="res-nome-list" class="autocomplete-list" style="display:none"></div>
         </div>
         </div>
@@ -2483,20 +2492,25 @@ function showUserSuggest(input, listId) {
   const matches = STATE.users.filter(u => u.status === 'ativo' && u.nome.toLowerCase().includes(val)).slice(0, 6);
   if (!matches.length) { list.style.display = 'none'; return; }
   list.innerHTML = matches.map(u => `
-    <div class="autocomplete-item" onclick="selectUser('${u.nome}','${input.id}','${listId}')">
+    <div class="autocomplete-item" onmousedown="event.preventDefault();event.stopPropagation();selectUser('${u.nome}','${input.id}','${listId}')">
       <div class="autocomplete-avatar">${initials(u.nome)}</div>
       <div><div style="font-weight:600;font-size:13px">${u.nome}</div><div style="font-size:11px;color:var(--gray-400)">${u.unidade||''} · ${u.role==='admin'?'Admin':'Usuário'}</div></div>
     </div>`).join('');
   list.style.display = 'block';
-  document.addEventListener('click', function handler(e) {
-    if (!list.contains(e.target) && e.target !== input) { list.style.display = 'none'; document.removeEventListener('click', handler); }
-  });
+  // Fecha ao clicar fora — usando mousedown para capturar antes do blur
+  const closeHandler = e => {
+    if (!list.contains(e.target) && e.target !== input) {
+      list.style.display = 'none';
+      document.removeEventListener('mousedown', closeHandler);
+    }
+  };
+  document.addEventListener('mousedown', closeHandler);
 }
 
 function selectUser(nome, inputId, listId) {
   const input = document.getElementById(inputId);
   const list  = document.getElementById(listId);
-  if (input) input.value = nome;
+  if (input) { input.value = nome; input.focus(); }
   if (list)  list.style.display = 'none';
 }
 
