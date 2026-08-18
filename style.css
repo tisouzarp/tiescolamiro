@@ -1632,3 +1632,26 @@ tbody td {
   line-height: 1.6;
   white-space: pre-wrap;
 }
+
+/* ===== DROPDOWN FIXO — não cortado pela tabela ===== */
+.actions-dropdown {
+  position: fixed !important;
+  z-index: 9999 !important;
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0,0,0,.15);
+  min-width: 190px;
+  overflow: hidden;
+  animation: dropDown .15s ease;
+}
+
+/* Garantir que table-wrapper não corte o dropdown */
+.table-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.card {
+  overflow: visible;
+}

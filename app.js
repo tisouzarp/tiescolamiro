@@ -44,6 +44,7 @@ const STATE = {
   ],
   nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1 },
   acompanhamentos: [], // { id, chamadoId, texto, autor, tipo, criado }
+  filtros: { reserva: '', chamado: '', chamadoPrio: '', reservaSearch: '', chamadoSearch: '' },
 };
 
 function dateNow() { return new Date().toISOString().split('T')[0]; }
@@ -194,6 +195,7 @@ function renderLayout() {
         <button class="nav-item ${STATE.currentPage==='dashboard'?'active':''}" data-page="dashboard"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
         <button class="nav-item ${STATE.currentPage==='calendario'?'active':''}" data-page="calendario"><i class="ti ti-calendar-month"></i> Calendário</button>
         <button class="nav-item ${STATE.currentPage==='reservas'?'active':''}" data-page="reservas"><i class="ti ti-calendar-event"></i> Reservas</button>
+        <button class="nav-item ${STATE.currentPage==='reservas-ativas'?'active':''}" data-page="reservas-ativas"><i class="ti ti-calendar-check"></i> Reservas Abertas</button>
         <button class="nav-item ${STATE.currentPage==='chamados'?'active':''}" data-page="chamados">
           <i class="ti ti-headset"></i> Chamados
           ${openCh>0?`<span class="nav-badge" data-badge="chamados">${openCh}</span>`:''}
@@ -284,7 +286,7 @@ function attachLayoutEvents() {
   if (notifBtn) notifBtn.addEventListener('click', e=>{ e.stopPropagation(); showNotifPanel(); });
   $('#btn-new-action').addEventListener('click', ()=>{
     const p = STATE.currentPage;
-    if (['dashboard','reservas','calendario','novaReserva'].includes(p)) openModalReserva();
+    if (['dashboard','reservas','calendario','novaReserva','reservas-ativas'].includes(p)) openModalReserva();
     else if (['chamados','novoChamado'].includes(p)) openModalChamado();
     else if (p==='inventario') openModalInventario();
     else if (p==='licencas') openModalLicenca();
@@ -323,6 +325,7 @@ function renderPage(page) {
     'em-licencas': ()=>paginaUnidade('licencas','Ensino Médio'),
     'em-usuarios': ()=>paginaUnidade('usuarios','Ensino Médio'),
     'em-relatorios': ()=>paginaUnidade('relatorios','Ensino Médio'),
+    'reservas-ativas': reservasAtivasPage,
   };
   content.innerHTML = pages[page] ? pages[page]() : '<p>Página não encontrada.</p>';
   attachPageEvents(page);
@@ -347,8 +350,19 @@ function attachPageEvents(page) {
 
 function attachTableFilter(searchId, filterId, tbodyId, getFn) {
   const s=$(`#${searchId}`), f=$(`#${filterId}`);
-  if(s) s.addEventListener('input', ()=>{ const el=$(`#${tbodyId}`); if(el) el.innerHTML=getFn(); });
-  if(f) f.addEventListener('change', ()=>{ const el=$(`#${tbodyId}`); if(el) el.innerHTML=getFn(); });
+  // Restaurar filtros salvos
+  if(s && STATE.filtros[searchId.replace('search-','')+'Search']) s.value=STATE.filtros[searchId.replace('search-','')+'Search']||'';
+  if(f && STATE.filtros[filterId.replace('filter-','').replace('-status','').replace('-prio','')]) {
+    f.value=STATE.filtros[filterId.replace('filter-','').replace('-status','').replace('-prio','')]||'';
+  }
+  if(s) s.addEventListener('input', ()=>{
+    STATE.filtros[searchId.replace('search-','')+'Search']=s.value;
+    const el=$(`#${tbodyId}`); if(el) el.innerHTML=getFn();
+  });
+  if(f) f.addEventListener('change', ()=>{
+    STATE.filtros[filterId.replace('filter-','').replace('-status','').replace('-prio','')]=f.value;
+    const el=$(`#${tbodyId}`); if(el) el.innerHTML=getFn();
+  });
 }
 
 // ===== NOTIFICATION PANEL =====
@@ -464,7 +478,7 @@ function dashboard() {
 
   return `
   <div class="stats-grid">
-    <div class="stat-card clickable" onclick="navigateTo('reservas')">
+    <div class="stat-card clickable" onclick="navigateTo('reservas-ativas')">
       <div class="stat-icon blue"><i class="ti ti-calendar-event"></i></div>
       <div class="stat-info"><div class="stat-number">${reservasAtivas}</div><div class="stat-label">Reservas Ativas</div></div>
       <i class="ti ti-arrow-right stat-arrow"></i>
@@ -504,33 +518,54 @@ function dashboard() {
     </div>
     <div class="card-body" style="padding:0">
       ${reservasHoje.length===0
-        ? '<div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva para hoje</h3><p>Clique em "Nova Reserva" para criar.</p></div>'
+        ? '<div class="empty-state" style="padding:24px"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva para hoje</h3></div>'
         : `<table style="width:100%">
-            <thead><tr>
-              <th>Equipamento</th><th>Solicitante</th><th>Cargo</th><th>Turma/Sala</th><th>Horário</th><th>Qtd</th><th>Unidade</th><th>Status</th><th>Ações</th>
-            </tr></thead>
-            <tbody>
-              ${reservasHoje.map(r=>`
+            <thead><tr><th>Equipamento</th><th>Solicitante</th><th>Cargo</th><th>Turma/Sala</th><th>Horário</th><th>Qtd</th><th>Unidade</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody>${reservasHoje.map(r=>`
               <tr>
                 <td><strong>${r.equipamento}</strong><br><span class="text-muted">${r.equipamentoTipo}</span></td>
-                <td>${r.solicitante}</td>
-                <td><span class="text-muted">${r.cargo}</span></td>
+                <td>${r.solicitante}</td><td><span class="text-muted">${r.cargo}</span></td>
                 <td><strong>${r.sala}</strong></td>
-                <td><span class="badge badge-reservado">${r.horaInicio} – ${r.horaFim}</span></td>
-                <td><strong>${r.quantidade}</strong></td>
-                <td>${r.unidade||'Matriz'}</td>
+                <td><span class="badge badge-reservado">${r.horaInicio}–${r.horaFim}</span></td>
+                <td><strong>${r.quantidade}</strong></td><td>${r.unidade||'Matriz'}</td>
                 <td><span class="badge badge-${r.status}">${r.status}</span></td>
-                <td>
-                  <div style="display:flex;gap:4px">
-                    <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
-                    <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('dashboard')" title="Fechar" style="color:var(--success)"><i class="ti ti-check"></i></button>
-                  </div>
-                </td>
+                <td><div style="display:flex;gap:4px">
+                  <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                  <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('dashboard')" title="Fechar" style="color:var(--success)"><i class="ti ti-check"></i></button>
+                </div></td>
               </tr>`).join('')}
-            </tbody>
-          </table>`}
+            </tbody></table>`}
     </div>
   </div>
+
+  <!-- RESERVAS ABERTAS (não do dia de hoje) -->
+  ${(() => {
+    const abertas = STATE.reservas.filter(r=>r.status==='ativo'&&r.dataInicio!==hoje);
+    if(!abertas.length) return '';
+    return `<div class="card mb-20" style="border-left:4px solid var(--warning)">
+      <div class="card-header" style="background:var(--warning-bg)">
+        <span class="card-title"><i class="ti ti-calendar-event" style="color:var(--warning)"></i> Reservas Abertas (${abertas.length})</span>
+        <button class="btn btn-sm btn-ghost" onclick="navigateTo('reservas-ativas')">Ver todas</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%">
+          <thead><tr><th>Equipamento</th><th>Solicitante</th><th>Sala</th><th>Data</th><th>Horário</th><th>Unidade</th><th>Ações</th></tr></thead>
+          <tbody>${abertas.slice(0,5).map(r=>`
+            <tr>
+              <td><strong>${r.equipamento}</strong></td><td>${r.solicitante}</td>
+              <td>${r.sala}</td><td>${formatDate(r.dataInicio)}</td>
+              <td>${r.horaInicio}–${r.horaFim}</td><td>${r.unidade||'Matriz'}</td>
+              <td><div style="display:flex;gap:4px">
+                <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('dashboard')" title="Fechar" style="color:var(--success)"><i class="ti ti-check"></i></button>
+              </div></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        ${abertas.length>5?`<div style="padding:10px 16px;text-align:center;border-top:1px solid var(--gray-100)"><button class="btn btn-ghost btn-sm" onclick="navigateTo('reservas-ativas')">Ver todas as ${abertas.length} reservas abertas</button></div>`:''}
+      </div>
+    </div>`;
+  })()}
 
   <div class="grid-2">
     <div class="card">
@@ -690,15 +725,23 @@ function getFilteredChamados() {
   const q=($('#search-chamado')?.value||'').toLowerCase();
   const st=$('#filter-chamado-status')?.value||'';
   const prio=$('#filter-chamado-prio')?.value||'';
-  return STATE.chamados.filter(c=>c.status!=='fechado'&&c.status!=='cancelado'&&(!q||c.titulo.toLowerCase().includes(q)||c.solicitante.toLowerCase().includes(q))&&(!st||c.status===st)&&(!prio||c.prioridade===prio));
+  // Se nenhum filtro de status selecionado, exclui fechado/cancelado (visão padrão)
+  // Se status específico selecionado (mesmo fechado), mostra todos que baterem
+  return STATE.chamados.filter(c=>{
+    if(!st && (c.status==='fechado'||c.status==='cancelado')) return false;
+    if(st && c.status!==st) return false;
+    if(prio && c.prioridade!==prio) return false;
+    if(q && !c.titulo.toLowerCase().includes(q) && !c.solicitante.toLowerCase().includes(q)) return false;
+    return true;
+  });
 }
 
 function chamados() {
   const ativos=STATE.chamados.filter(c=>c.status!=='fechado'&&c.status!=='cancelado');
   return `
-  <div class="filter-bar">
+  <div class="filter-bar no-print">
     <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar..." id="search-chamado"/></div>
-    <select class="filter-select" id="filter-chamado-status"><option value="">Todos</option><option value="aberto">Aberto</option><option value="andamento">Em Andamento</option><option value="suspenso">Suspenso</option><option value="pendente">Pendente</option></select>
+    <select class="filter-select" id="filter-chamado-status"><option value="">Todos</option><option value="aberto">Aberto</option><option value="andamento">Em Andamento</option><option value="pendente">Pendente</option><option value="suspenso">Suspenso</option><option value="fechado">Fechado</option><option value="cancelado">Cancelado</option></select>
     <select class="filter-select" id="filter-chamado-prio"><option value="">Prioridade</option><option value="Alta">Alta</option><option value="Media">Média</option><option value="Baixa">Baixa</option></select>
     <button class="btn btn-primary" onclick="openModalChamado()"><i class="ti ti-plus"></i> Novo Chamado</button>
   </div>
@@ -1029,6 +1072,63 @@ function renderUserRows(list) {
 }
 
 // ===== PÁGINAS DE USUÁRIO NORMAL =====
+function reservasAtivasPage() {
+  const list = STATE.reservas.filter(r=>r.status==='ativo');
+  return `
+  <div class="filter-bar no-print">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar..." id="search-res-ativas" oninput="filtrarResAtivas(this.value)"/></div>
+    <select class="filter-select" id="filter-res-ativas-uni" onchange="filtrarResAtivas()">
+      <option value="">Todas as unidades</option><option value="Matriz">Matriz</option><option value="Ensino Médio">Ensino Médio</option>
+    </select>
+    <button class="btn btn-primary" onclick="openModalReserva()"><i class="ti ti-plus"></i> Nova Reserva</button>
+  </div>
+  <div class="card">
+    <div class="card-header" style="background:var(--warning-bg);border-bottom-color:var(--gray-200)">
+      <span class="card-title" style="color:var(--warning)"><i class="ti ti-calendar-event"></i> Reservas Abertas — ${list.length} no total</span>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>#</th><th>Equipamento</th><th>Tipo</th><th>Solicitante</th><th>Cargo</th><th>Sala/Turma</th><th>Data</th><th>Horário</th><th>Qtd</th><th>Unidade</th><th>Observações</th><th>Ações</th></tr></thead>
+        <tbody id="tbody-res-ativas">
+          ${renderResAtivas(list)}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderResAtivas(list) {
+  if(!list.length) return `<tr><td colspan="12"><div class="empty-state"><i class="ti ti-calendar-check"></i><h3>Nenhuma reserva aberta</h3><p>Todas as reservas foram fechadas!</p></div></td></tr>`;
+  return list.map(r=>`
+  <tr>
+    <td><strong style="color:var(--primary)">#${r.id}</strong></td>
+    <td><strong>${r.equipamento}</strong></td>
+    <td><span class="badge badge-reservado" style="font-size:11px">${r.equipamentoTipo}</span></td>
+    <td>${r.solicitante}</td>
+    <td style="font-size:12px;color:var(--gray-500)">${r.cargo}</td>
+    <td><strong>${r.sala}</strong></td>
+    <td><strong>${formatDate(r.dataInicio)}</strong></td>
+    <td>${r.horaInicio}–${r.horaFim}</td>
+    <td style="text-align:center"><strong>${r.quantidade}</strong></td>
+    <td>${r.unidade||'Matriz'}</td>
+    <td style="font-size:12px;color:var(--gray-500)">${r.obs||'—'}</td>
+    <td>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-ghost" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i> Editar</button>
+        <button class="btn btn-sm btn-success" onclick="changeReservaStatus(${r.id},'fechado');renderPage('reservas-ativas')" title="Fechar"><i class="ti ti-check"></i> Fechar</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteReserva(${r.id})" title="Excluir"><i class="ti ti-trash"></i></button>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+
+function filtrarResAtivas(q) {
+  const search=(typeof q==='string'?q:($('#search-res-ativas')?.value||'')).toLowerCase();
+  const uni=$('#filter-res-ativas-uni')?.value||'';
+  const list=STATE.reservas.filter(r=>r.status==='ativo'&&(!search||r.equipamento.toLowerCase().includes(search)||r.solicitante.toLowerCase().includes(search)||r.sala.toLowerCase().includes(search))&&(!uni||(r.unidade||'Matriz')===uni));
+  const tb=$('#tbody-res-ativas'); if(tb) tb.innerHTML=renderResAtivas(list);
+}
+
 function novaReserva() { setTimeout(()=>openModalReserva(),100); return `<div class="empty-state" style="padding:80px"><i class="ti ti-calendar-plus" style="font-size:56px;color:var(--primary)"></i><h3>Abrindo formulário de reserva...</h3></div>`; }
 function novoChamado() { setTimeout(()=>openModalChamado(),100); return `<div class="empty-state" style="padding:80px"><i class="ti ti-headset" style="font-size:56px;color:var(--primary)"></i><h3>Abrindo formulário de chamado...</h3></div>`; }
 function meuschamados() {
@@ -1855,7 +1955,7 @@ function openModalReserva(reservaId=null, preData=null) {
       <div class="form-row-3">
         <div class="form-group">
           <label class="required">Data da Reserva</label>
-          <input type="date" id="res-data" value="${r?.dataInicio||preData||dateNow()}" min="${dateNow()}" />
+          <input type="date" id="res-data" value="${r?.dataInicio||preData||dateNow()}" />
         </div>
         <div class="form-group">
           <label class="required">Horário Início</label>
@@ -2214,9 +2314,27 @@ function deleteChamado(id){ if(!confirm('Excluir chamado?')) return; STATE.chama
 
 // ===== ACTIONS DROPDOWN =====
 function toggleMenu(btn) {
-  $$('.actions-dropdown').forEach(d=>{ if(d!==btn.nextElementSibling) d.style.display='none'; });
-  const m=btn.nextElementSibling; m.style.display=m.style.display==='none'?'':'none';
-  if(m.style.display!=='none') setTimeout(()=>document.addEventListener('click',()=>m.style.display='none',{once:true}),10);
+  $$('.actions-dropdown').forEach(d=>{ if(d!==btn.nextElementSibling){ d.style.display='none'; d.removeAttribute('data-open'); } });
+  const m=btn.nextElementSibling;
+  const isOpen = m.style.display!=='none';
+  if(isOpen){ m.style.display='none'; return; }
+  m.style.display='block';
+  m.style.position='fixed';
+  m.style.zIndex='9999';
+  // Posicionar abaixo do botão
+  const rect=btn.getBoundingClientRect();
+  const mW=200;
+  let left=rect.right-mW;
+  let top=rect.bottom+4;
+  // Verificar se sai da tela pela direita
+  if(left<8) left=8;
+  // Verificar se sai pela parte inferior
+  if(top+200>window.innerHeight) top=rect.top-204;
+  m.style.left=left+'px';
+  m.style.top=top+'px';
+  m.style.right='auto';
+  m.style.minWidth=mW+'px';
+  setTimeout(()=>document.addEventListener('click',()=>{ m.style.display='none'; },{ once:true }),10);
 }
 
 // ===== NAV GROUP TOGGLE =====
@@ -2477,9 +2595,34 @@ function salvarAcompanhamento(chamadoId) {
   saveState();
   addNotification(`Acompanhamento #${chamadoId}`, `${STATE.currentUser.nome}: ${texto.slice(0,40)}...`, 'ti-message-circle');
   toast('Acompanhamento registrado!');
-  closeModal();
-  // Reabrir o modal atualizado
-  openModalAcompanhamento(chamadoId);
+  // Atualiza a lista dentro do modal sem fechar e reabrir
+  const listaEl = document.getElementById('acomp-lista');
+  if (listaEl) {
+    const lista = STATE.acompanhamentos.filter(a=>a.chamadoId===chamadoId).sort((a,b)=>b.id-a.id);
+    listaEl.innerHTML = lista.map(a=>`
+      <div class="acomp-item acomp-${a.tipo}">
+        <div class="acomp-avatar">${initials(a.autor)}</div>
+        <div class="acomp-body">
+          <div class="acomp-header">
+            <strong>${a.autor}</strong>
+            <span class="acomp-tipo-badge acomp-tipo-${a.tipo}">${{observacao:'Observação',solucao:'Solução',pendencia:'Pendência',retorno:'Retorno ao usuário'}[a.tipo]||a.tipo}</span>
+            <span style="margin-left:auto;font-size:11px;color:var(--gray-400)">${formatDate(a.criado)} às ${a.hora}</span>
+          </div>
+          <div class="acomp-texto">${a.texto.replace(/\n/g,'<br>')}</div>
+        </div>
+      </div>`).join('');
+    // Limpar o campo de texto e resetar tipo
+    const txtEl=document.getElementById('acomp-texto'); if(txtEl) txtEl.value='';
+    const tipoEl=document.getElementById('acomp-tipo'); if(tipoEl) tipoEl.value='observacao';
+    const stEl=document.getElementById('acomp-status'); if(stEl) stEl.value='';
+    // Atualizar status no cabeçalho do modal se mudou
+    if(novoStatus){
+      const badgeEl=document.querySelector('.modal .badge[class*="badge-"]');
+      if(badgeEl){ badgeEl.className=`badge badge-${novoStatus}`; badgeEl.textContent=novoStatus; }
+    }
+  } else {
+    closeModal();
+  }
   renderPage(STATE.currentPage);
 }
 
