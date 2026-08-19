@@ -1,7 +1,157 @@
 /* ============================================================
    TI - ESCOLA MIRÓ | Sistema de Chamados e Reservas v2
    Responsável: Tiago Souza
+   Banco de dados: Firebase Firestore (nuvem, tempo real)
    ============================================================ */
+
+// ===== FIREBASE CONFIG =====
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCNZJsFFYhWFyCDdmhCrmwlzS7cHlzoIks",
+  authDomain: "ti-escola-miro.firebaseapp.com",
+  projectId: "ti-escola-miro",
+  storageBucket: "ti-escola-miro.firebasestorage.app",
+  messagingSenderId: "1042529818892",
+  appId: "1:1042529818892:web:5b366914bb0c5a5c045129"
+};
+
+// Coleções do Firestore
+const COLECOES = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','notifications','config'];
+
+// Firebase SDK via CDN (carregado no index.html)
+let db = null;   // Firestore instance
+let DB_READY = false;
+let OFFLINE_MODE = false;
+
+async function initFirebase() {
+  try {
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, writeBatch, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+
+    window.FB_APP   = initializeApp(FIREBASE_CONFIG);
+    window.FB_DB    = getFirestore(window.FB_APP);
+    window.FB_FUNS  = { collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, writeBatch, serverTimestamp };
+    db = window.FB_DB;
+    DB_READY = true;
+    console.log('Firebase conectado!');
+    return true;
+  } catch(e) {
+    console.warn('Firebase offline, usando localStorage:', e);
+    OFFLINE_MODE = true;
+    return false;
+  }
+}
+
+// ===== FIREBASE HELPERS =====
+async function fbSave(colecao, id, dados) {
+  if (!DB_READY) { saveLocal(); return; }
+  try {
+    const { doc, setDoc } = window.FB_FUNS;
+    await setDoc(doc(db, colecao, String(id)), { ...dados, _id: id });
+  } catch(e) { console.error('fbSave error:', e); saveLocal(); }
+}
+
+async function fbDelete(colecao, id) {
+  if (!DB_READY) { saveLocal(); return; }
+  try {
+    const { doc, deleteDoc } = window.FB_FUNS;
+    await deleteDoc(doc(db, colecao, String(id)));
+  } catch(e) { console.error('fbDelete error:', e); }
+}
+
+async function fbLoadAll() {
+  if (!DB_READY) return false;
+  try {
+    const { collection, getDocs } = window.FB_FUNS;
+    const colecoes = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos'];
+    for (const col of colecoes) {
+      const snap = await getDocs(collection(db, col));
+      if (!snap.empty) {
+        const dados = snap.docs.map(d => d.data());
+        if (col === 'users')           STATE.users           = dados;
+        if (col === 'equipamentos')    STATE.equipamentos    = dados;
+        if (col === 'reservas')        STATE.reservas        = dados;
+        if (col === 'chamados')        STATE.chamados        = dados;
+        if (col === 'inventario')      STATE.inventario      = dados;
+        if (col === 'licencas')        STATE.licencas        = dados;
+        if (col === 'acompanhamentos') STATE.acompanhamentos = dados;
+      }
+    }
+    // Carregar config (nextId etc)
+    const configSnap = await getDocs(collection(db, 'config'));
+    if (!configSnap.empty) {
+      const cfg = configSnap.docs[0].data();
+      if (cfg.nextId) STATE.nextId = cfg.nextId;
+    }
+    console.log('Dados carregados do Firebase!');
+    return true;
+  } catch(e) {
+    console.error('fbLoadAll error:', e);
+    return false;
+  }
+}
+
+async function fbSaveConfig() {
+  if (!DB_READY) return;
+  try {
+    const { doc, setDoc } = window.FB_FUNS;
+    await setDoc(doc(db, 'config', 'main'), { nextId: STATE.nextId });
+  } catch(e) { console.error('fbSaveConfig error:', e); }
+}
+
+// Migrar dados do localStorage para o Firebase (uma única vez)
+async function migrarLocalParaFirebase() {
+  if (!DB_READY) return;
+  const jaFeito = localStorage.getItem('miro_migrado_firebase');
+  if (jaFeito) return;
+  const localData = localStorage.getItem('miro_ti_v2');
+  if (!localData) return;
+  try {
+    const dados = JSON.parse(localData);
+    showMigracaoModal();
+    const colMap = { users:'users', equipamentos:'equipamentos', reservas:'reservas', chamados:'chamados', inventario:'inventario', licencas:'licencas', acompanhamentos:'acompanhamentos' };
+    for (const [chave, colecao] of Object.entries(colMap)) {
+      if (dados[chave] && dados[chave].length > 0) {
+        for (const item of dados[chave]) {
+          await fbSave(colecao, item.id || item.usuario, item);
+        }
+      }
+    }
+    if (dados.nextId) {
+      STATE.nextId = dados.nextId;
+      await fbSaveConfig();
+    }
+    localStorage.setItem('miro_migrado_firebase', '1');
+    closeMigracaoModal();
+    toast('✅ Dados migrados para a nuvem com sucesso!', 'success');
+    await fbLoadAll();
+  } catch(e) {
+    console.error('Migração falhou:', e);
+    closeMigracaoModal();
+    toast('Migração encontrou um erro. Dados locais preservados.', 'warning');
+  }
+}
+
+function showMigracaoModal() {
+  let el = document.getElementById('migracao-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'migracao-overlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center';
+    el.innerHTML = `<div style="background:white;border-radius:16px;padding:40px;text-align:center;max-width:380px">
+      <div style="font-size:48px;margin-bottom:16px">☁️</div>
+      <h2 style="font-size:20px;font-weight:800;margin-bottom:8px;color:#1e293b">Migrando para a nuvem</h2>
+      <p style="color:#64748b;font-size:14px;margin-bottom:20px">Seus dados estão sendo enviados para o Firebase. Aguarde um momento...</p>
+      <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden">
+        <div style="height:100%;background:#0073c8;border-radius:3px;animation:progresso 2s ease-in-out infinite"></div>
+      </div>
+    </div>`;
+    document.body.appendChild(el);
+  }
+}
+function closeMigracaoModal() {
+  const el = document.getElementById('migracao-overlay');
+  if (el) el.remove();
+}
 
 // ===== STATE =====
 const STATE = {
@@ -2024,8 +2174,8 @@ function salvarReserva(id) {
   const data=$('#res-data')?.value, hinicio=$('#res-hinicio')?.value, hfim=$('#res-hfim')?.value;
   const qtd=parseInt($('#res-qtd')?.value)||1, obs=$('#res-obs')?.value||'', unidade=$('#res-unidade')?.value||'Matriz';
   if(!tipo||!equipNome||!cargo||!nome||!sala||!data||!hinicio||!hfim){ toast('Preencha todos os campos obrigatórios.','error'); return; }
-  if(id){ const r=STATE.reservas.find(r=>r.id===id); if(r) Object.assign(r,{equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade}); toast('Reserva atualizada!'); }
-  else { STATE.reservas.push({id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow()}); addNotification('Nova reserva criada',`${nome} reservou ${equipNome}`,'ti-calendar-plus'); toast('Reserva criada!'); }
+  if(id){ const r=STATE.reservas.find(r=>r.id===id); if(r){ Object.assign(r,{equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade}); fbSave('reservas',r.id,r); } toast('Reserva atualizada!'); }
+  else { const nr={id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow()}; STATE.reservas.push(nr); fbSave('reservas',nr.id,nr); addNotification('Nova reserva criada',`${nome} reservou ${equipNome}`,'ti-calendar-plus'); toast('Reserva criada!'); }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
 
@@ -2090,8 +2240,8 @@ function salvarChamado(id) {
   const desc=($('#ch-desc')?.value||'').trim() || (chamadoAtual?.descricao||'');
   const unidade=$('#ch-unidade')?.value || (chamadoAtual?.unidade||'Matriz');
   if(!titulo||!cat||!prio||!sol||!desc){ toast('Preencha todos os campos obrigatórios.','error'); return; }
-  if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c) Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,atualizado:dateNow()}); toast('Chamado atualizado!'); }
-  else { STATE.chamados.push({id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,status:'aberto',criado:dateNow(),atualizado:dateNow()}); addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); }
+  if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c){ Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,atualizado:dateNow()}); fbSave('chamados',c.id,c); } toast('Chamado atualizado!'); }
+  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,status:'aberto',criado:dateNow(),atualizado:dateNow()}; STATE.chamados.push(nc); fbSave('chamados',nc.id,nc); addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
 
@@ -2139,11 +2289,11 @@ function salvarInventario(id) {
   const nome=$('#inv-nome')?.value.trim(), cat=$('#inv-cat')?.value, pat=$('#inv-pat')?.value.trim();
   if(!nome||!cat||!pat){ toast('Preencha nome, categoria e patrimônio.','error'); return; }
   const data={ nome, categoria:cat, tipo:$('#inv-tipo')?.value, marca:$('#inv-marca')?.value, modelo:$('#inv-modelo')?.value, patrimonio:pat, serie:$('#inv-serie')?.value, ip:$('#inv-ip')?.value, local:$('#inv-local')?.value, unidade:$('#inv-unidade')?.value||'Matriz', garantia:$('#inv-garantia')?.value, status:$('#inv-status')?.value||'ativo', obs:$('#inv-obs')?.value };
-  if(id){ const i=STATE.inventario.find(i=>i.id===id); if(i) Object.assign(i,data); toast('Item atualizado!'); }
-  else { STATE.inventario.push({id:STATE.nextId.inventario++,...data}); toast('Item adicionado ao inventário!'); }
+  if(id){ const i=STATE.inventario.find(i=>i.id===id); if(i){ Object.assign(i,data); fbSave('inventario',i.id,i); } toast('Item atualizado!'); }
+  else { const ni={id:STATE.nextId.inventario++,...data}; STATE.inventario.push(ni); fbSave('inventario',ni.id,ni); toast('Item adicionado ao inventário!'); }
   closeModal(); saveState(); renderPage('inventario');
 }
-function deleteInventario(id){ if(!confirm('Excluir este item?')) return; STATE.inventario=STATE.inventario.filter(i=>i.id!==id); saveState(); renderPage('inventario'); toast('Item excluído.','info'); }
+function deleteInventario(id){ if(!confirm('Excluir este item?')) return; fbDelete('inventario',id); STATE.inventario=STATE.inventario.filter(i=>i.id!==id); saveState(); renderPage('inventario'); toast('Item excluído.','info'); }
 
 // ===== MODALS: LICENÇA =====
 function openModalLicenca(licId=null) {
@@ -2184,11 +2334,11 @@ function salvarLicenca(id) {
   if(!nome||!forn||!venc){ toast('Preencha nome, fornecedor e vencimento.','error'); return; }
   const data={ nome, fornecedor:forn, tipo:$('#lic-tipo')?.value, quantidade:parseInt($('#lic-qtd')?.value)||1, valor:parseFloat($('#lic-valor')?.value)||0, chave:$('#lic-chave')?.value, dataCompra:$('#lic-compra')?.value, vencimento:venc, unidade:$('#lic-unidade')?.value||'Matriz', status:$('#lic-status')?.value||'ativo', obs:$('#lic-obs')?.value };
   const dias=diasParaVencer(venc); if(dias<=30&&dias>0) data.status='vencendo'; if(dias<=0) data.status='expirado';
-  if(id){ const l=STATE.licencas.find(l=>l.id===id); if(l) Object.assign(l,data); toast('Licença atualizada!'); }
-  else { STATE.licencas.push({id:STATE.nextId.licenca++,...data}); toast('Licença cadastrada!'); }
+  if(id){ const l=STATE.licencas.find(l=>l.id===id); if(l){ Object.assign(l,data); fbSave('licencas',l.id,l); } toast('Licença atualizada!'); }
+  else { const nl={id:STATE.nextId.licenca++,...data}; STATE.licencas.push(nl); fbSave('licencas',nl.id,nl); toast('Licença cadastrada!'); }
   closeModal(); saveState(); renderPage('licencas');
 }
-function deleteLicenca(id){ if(!confirm('Excluir esta licença?')) return; STATE.licencas=STATE.licencas.filter(l=>l.id!==id); saveState(); renderPage('licencas'); toast('Licença excluída.','info'); }
+function deleteLicenca(id){ if(!confirm('Excluir esta licença?')) return; fbDelete('licencas',id); STATE.licencas=STATE.licencas.filter(l=>l.id!==id); saveState(); renderPage('licencas'); toast('Licença excluída.','info'); }
 
 // ===== MODALS: EQUIPAMENTO =====
 function openModalEquipamento(unidadeFixa=null, equipId=null) {
@@ -2263,7 +2413,7 @@ function salvarEquipamento(id) {
   }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
-function deleteEquipamento(id){ if(!confirm('Excluir este equipamento?')) return; STATE.equipamentos=STATE.equipamentos.filter(e=>e.id!==id); saveState(); renderPage(STATE.currentPage); toast('Excluído.','info'); }
+function deleteEquipamento(id){ if(!confirm('Excluir este equipamento?')) return; fbDelete('equipamentos',id); STATE.equipamentos=STATE.equipamentos.filter(e=>e.id!==id); saveState(); renderPage(STATE.currentPage); toast('Excluído.','info'); }
 
 // ===== MODALS: USUÁRIO =====
 function openModalUsuario(userId=null) {
@@ -2295,22 +2445,23 @@ function salvarUsuario(id) {
   if(!nome||!email||!login){ toast('Preencha nome, e-mail e usuário.','error'); return; }
   if(!id&&!senha){ toast('Defina uma senha.','error'); return; }
   if(senha&&senha.length<6){ toast('Senha mínimo 6 caracteres.','error'); return; }
-  if(id){ const u=STATE.users.find(u=>u.id===id); if(u){ Object.assign(u,{nome,email,usuario:login,role,unidade}); if(senha) u.senha=senha; } toast('Usuário atualizado!'); }
+  if(id){ const u=STATE.users.find(u=>u.id===id); if(u){ Object.assign(u,{nome,email,usuario:login,role,unidade}); if(senha) u.senha=senha; fbSave('users',u.id,u); } toast('Usuário atualizado!'); }
   else {
     if(STATE.users.find(u=>u.usuario===login||u.email===email)){ toast('Usuário ou e-mail já existe.','error'); return; }
-    STATE.users.push({id:STATE.nextId.usuario++,nome,email,usuario:login,senha,role,status:'ativo',unidade,criado:dateNow()});
+    const nu={id:STATE.nextId.usuario++,nome,email,usuario:login,senha,role,status:'ativo',unidade,criado:dateNow()};
+    STATE.users.push(nu); fbSave('users',nu.id,nu);
     addNotification('Novo usuário cadastrado',nome,'ti-user-plus'); toast('Usuário criado!');
   }
   closeModal(); saveState(); renderPage('usuarios');
 }
-function deleteUsuario(id){ if(id===STATE.currentUser.id){ toast('Não pode excluir seu próprio usuário.','error'); return; } if(!confirm('Excluir usuário?')) return; STATE.users=STATE.users.filter(u=>u.id!==id); saveState(); renderPage('usuarios'); toast('Usuário excluído.','info'); }
-function toggleUserStatus(id){ const u=STATE.users.find(u=>u.id===id); if(!u) return; u.status=u.status==='ativo'?'suspenso':'ativo'; saveState(); renderPage('usuarios'); toast(`Usuário ${u.status}.`,'info'); }
+function deleteUsuario(id){ if(id===STATE.currentUser.id){ toast('Não pode excluir seu próprio usuário.','error'); return; } if(!confirm('Excluir usuário?')) return; fbDelete('users',id); STATE.users=STATE.users.filter(u=>u.id!==id); saveState(); renderPage('usuarios'); toast('Usuário excluído.','info'); }
+function toggleUserStatus(id){ const u=STATE.users.find(u=>u.id===id); if(!u) return; u.status=u.status==='ativo'?'suspenso':'ativo'; fbSave('users',u.id,u); saveState(); renderPage('usuarios'); toast(`Usuário ${u.status}.`,'info'); }
 
 // ===== STATUS CHANGERS =====
-function changeReservaStatus(id, status){ const r=STATE.reservas.find(r=>r.id===id); if(r){ r.status=status; saveState(); toast(`Reserva ${status}!`); } }
-function changeChamadoStatus(id, status){ const c=STATE.chamados.find(c=>c.id===id); if(c){ c.status=status; c.atualizado=dateNow(); saveState(); toast(`Chamado ${status}!`); } }
-function deleteReserva(id){ if(!confirm('Excluir reserva?')) return; STATE.reservas=STATE.reservas.filter(r=>r.id!==id); saveState(); renderPage(STATE.currentPage); toast('Reserva excluída.','info'); }
-function deleteChamado(id){ if(!confirm('Excluir chamado?')) return; STATE.chamados=STATE.chamados.filter(c=>c.id!==id); saveState(); renderPage(STATE.currentPage); toast('Chamado excluído.','info'); }
+function changeReservaStatus(id, status){ const r=STATE.reservas.find(r=>r.id===id); if(r){ r.status=status; fbSave('reservas',r.id,r); saveState(); toast(`Reserva ${status}!`); } }
+function changeChamadoStatus(id, status){ const c=STATE.chamados.find(c=>c.id===id); if(c){ c.status=status; c.atualizado=dateNow(); fbSave('chamados',c.id,c); saveState(); toast(`Chamado ${status}!`); } }
+function deleteReserva(id){ if(!confirm('Excluir reserva?')) return; fbDelete('reservas',id); STATE.reservas=STATE.reservas.filter(r=>r.id!==id); saveState(); renderPage(STATE.currentPage); toast('Reserva excluída.','info'); }
+function deleteChamado(id){ if(!confirm('Excluir chamado?')) return; fbDelete('chamados',id); STATE.chamados=STATE.chamados.filter(c=>c.id!==id); saveState(); renderPage(STATE.currentPage); toast('Chamado excluído.','info'); }
 
 // ===== ACTIONS DROPDOWN =====
 function toggleMenu(btn) {
@@ -2585,11 +2736,12 @@ function salvarAcompanhamento(chamadoId) {
     hora,
   };
   STATE.acompanhamentos.push(novoAcomp);
+  fbSave('acompanhamentos', novoAcomp.id, novoAcomp);
 
   // Alterar status se solicitado
   if (novoStatus) {
     const c = STATE.chamados.find(c => c.id === chamadoId);
-    if (c) { c.status = novoStatus; c.atualizado = dateNow(); }
+    if (c) { c.status = novoStatus; c.atualizado = dateNow(); fbSave('chamados',c.id,c); }
   }
 
   saveState();
@@ -2658,7 +2810,85 @@ function selectUser(nome, inputId, listId) {
 }
 
 // ===== INIT =====
-loadState();
-// Auto-atualizar status de licenças ao carregar
-STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
-render();
+async function iniciar() {
+  // 1. Carregar dados locais primeiro (exibe rápido)
+  loadState();
+  STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
+
+  // 2. Mostrar tela de loading enquanto conecta ao Firebase
+  document.getElementById('app').innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0073c8,#003d6e);flex-direction:column;gap:20px">
+      <img src="logo.png" alt="Escola Miró" style="height:80px;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,.3))" onerror="this.style.display='none'">
+      <div style="background:white;border-radius:16px;padding:32px 40px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);min-width:300px">
+        <div style="font-size:36px;margin-bottom:12px">☁️</div>
+        <h2 style="font-size:17px;font-weight:800;color:#1e293b;margin-bottom:6px">TI - Escola Miró</h2>
+        <p style="color:#64748b;font-size:13px;margin-bottom:18px">Conectando ao banco de dados...</p>
+        <div style="height:4px;background:#e2e8f0;border-radius:2px;overflow:hidden">
+          <div id="loading-bar" style="height:100%;width:30%;background:#0073c8;border-radius:2px;transition:width .5s ease"></div>
+        </div>
+        <p id="loading-status" style="font-size:11px;color:#94a3b8;margin-top:10px">Iniciando Firebase...</p>
+      </div>
+    </div>`;
+
+  const setProgress = (pct, msg) => {
+    const bar = document.getElementById('loading-bar');
+    const status = document.getElementById('loading-status');
+    if (bar) bar.style.width = pct + '%';
+    if (status) status.textContent = msg;
+  };
+
+  // 3. Conectar Firebase
+  setProgress(30, 'Conectando ao Firebase...');
+  const connected = await initFirebase();
+
+  if (connected) {
+    setProgress(60, 'Carregando dados da nuvem...');
+    const loaded = await fbLoadAll();
+
+    if (loaded) {
+      setProgress(80, 'Verificando migração...');
+      await migrarLocalParaFirebase();
+    }
+
+    setProgress(90, 'Configurando listeners em tempo real...');
+    setupRealtimeListeners();
+  } else {
+    setProgress(90, 'Modo offline — usando dados locais...');
+    toast('⚠️ Firebase indisponível. Usando dados locais.', 'warning');
+  }
+
+  setProgress(100, 'Pronto!');
+  STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
+
+  // 4. Renderizar
+  setTimeout(() => render(), 300);
+}
+
+// ===== LISTENERS TEMPO REAL =====
+function setupRealtimeListeners() {
+  if (!DB_READY) return;
+  const { collection, onSnapshot } = window.FB_FUNS;
+  const colMap = {
+    reservas:        (d) => { STATE.reservas        = d; },
+    chamados:        (d) => { STATE.chamados        = d; },
+    users:           (d) => { STATE.users           = d; updateNotifBadge(); },
+    equipamentos:    (d) => { STATE.equipamentos    = d; },
+    inventario:      (d) => { STATE.inventario      = d; },
+    licencas:        (d) => { STATE.licencas        = d.map(l=>{ const dv=diasParaVencer(l.vencimento); if(dv<=0) l.status='expirado'; else if(dv<=30) l.status='vencendo'; return l; }); },
+    acompanhamentos: (d) => { STATE.acompanhamentos = d; },
+  };
+  for (const [col, setter] of Object.entries(colMap)) {
+    onSnapshot(collection(db, col), (snap) => {
+      if (!snap.empty) {
+        setter(snap.docs.map(d => d.data()));
+        saveLocal();
+        // Atualizar página atual silenciosamente se estiver logado
+        if (STATE.currentUser && document.getElementById('page-content')) {
+          renderPage(STATE.currentPage);
+        }
+      }
+    });
+  }
+}
+
+iniciar();
