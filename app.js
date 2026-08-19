@@ -2892,3 +2892,41 @@ function setupRealtimeListeners() {
 }
 
 iniciar();
+
+// ===== EXPOR FUNÇÕES GLOBALMENTE (necessário para módulos ES) =====
+// onclick no HTML não enxerga funções de módulos sem isso
+Object.assign(window, {
+  // Navegação
+  navigateTo, renderPage, closeModal,
+  // Modais reserva
+  openModalReserva, openModalReservaData, openModalReservaUnidade,
+  editReserva, salvarReserva, changeReservaStatus, deleteReserva,
+  updateEquipList, checkOutroEquip, toggleOutroSala, changeQty,
+  filtrarResAtivas,
+  // Modais chamado
+  openModalChamado, openModalChamadoUnidade,
+  editChamado, salvarChamado, changeChamadoStatus, deleteChamado,
+  // Acompanhamentos
+  openModalAcompanhamento, salvarAcompanhamento,
+  // Modais equipamento
+  openModalEquipamento, editEquipamento, salvarEquipamento, deleteEquipamento, changeQtyEq,
+  // Modais inventário
+  openModalInventario, editInventario, salvarInventario, deleteInventario,
+  // Modais licença
+  openModalLicenca, editLicenca, salvarLicenca, deleteLicenca,
+  // Modais usuário
+  openModalUsuario, editUsuario, salvarUsuario, deleteUsuario,
+  toggleUserStatus,
+  // Menu e UI
+  toggleMenu, toggleNavGroup, toggleActionsMenu: toggleMenu,
+  // Relatórios
+  setRelMode, switchRelatorio, gerarRelatorio,
+  // Autocomplete
+  showUserSuggest, selectUser,
+  // Calendário
+  openModalReservaData,
+  // Unidades
+  renderUnidadeCharts, filtrarResAtivas,
+  // Misc
+  STATE,
+});
