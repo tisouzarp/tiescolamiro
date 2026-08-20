@@ -814,8 +814,8 @@ function renderCalendario() {
 function openModalReservaData(ds) { openModalReserva(null, ds); }
 
 // ===== RESERVAS =====
-const CARGOS=['Professor(a)','Coordenador(a)','Assistente','Estagiário(a)','Administrativo','Aluno'];
-const SALAS=['Grupo 1','Grupo 2','Grupo 3','Grupo 4','Grupo 5','1º Ano','2º Ano','3º Ano','4º Ano','5º Ano','6º Ano','7º Ano','8º Ano','9º Ano','1º Ano EM','2º Ano EM','3º Ano EM','Aula de Apoio','Outro'];
+const CARGOS=['Administrativo','Aluno','Assistente','Coordenador(a)','Diretor(a)','Estagiário(a)','Professor(a)'];
+const SALAS=['Grupo 1','Grupo 2','Grupo 3','Grupo 4','Grupo 5','1º Ano','2º Ano','3º Ano','4º Ano','5º Ano','6º Ano','7º Ano','8º Ano','9º Ano','1º Ano EM','2º Ano EM','3º Ano EM','Aula de Apoio','Reunião','Outro'];
 const HORAS=(()=>{const h=[];for(let i=6;i<24;i++)for(let m=0;m<60;m+=5)h.push(`${String(i).padStart(2,'0')}:${String(m).padStart(2,'0')}`);return h;})();
 
 function getFilteredReservas() {
@@ -951,9 +951,9 @@ function renderArqChamados() {
   <tbody>${list.length===0?`<tr><td colspan="8"><div class="empty-state"><i class="ti ti-archive"></i><h3>Nenhum chamado arquivado</h3></div></td></tr>`:list.map(c=>`
   <tr><td><strong style="color:var(--primary)">#${c.id}</strong></td><td><strong>${c.titulo}</strong></td><td>${c.categoria}</td><td>${c.solicitante}</td><td>${c.unidade||'Matriz'}</td><td><span class="badge badge-${c.status}">${c.status}</span></td><td>${formatDate(c.atualizado)}</td>
   <td><div style="display:flex;gap:6px">
-    <button class="btn btn-sm btn-ghost" onclick="changeChamadoStatus(${c.id},'aberto');renderPage('arquivados')"><i class="ti ti-refresh"></i> Reabrir</button>
-    <button class="btn btn-sm btn-ghost" onclick="editChamado(${c.id})"><i class="ti ti-edit"></i></button>
-    <button class="btn btn-sm btn-danger" onclick="deleteChamado(${c.id});renderPage('arquivados')"><i class="ti ti-trash"></i></button>
+    <button class="btn-icon" onclick="changeChamadoStatus(${c.id},'aberto');renderPage('arquivados')" title="Reabrir" style="color:var(--primary)"><i class="ti ti-refresh"></i></button>
+    <button class="btn-icon" onclick="editChamado(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
+    <button class="btn-icon" onclick="deleteChamado(${c.id});renderPage('arquivados')" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
   </div></td></tr>`).join('')}</tbody></table></div></div>`;
 }
 function renderArqReservas() {
@@ -963,8 +963,8 @@ function renderArqReservas() {
   <tbody>${list.length===0?`<tr><td colspan="7"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva arquivada</h3></div></td></tr>`:list.map(r=>`
   <tr><td><strong>${r.equipamento}</strong></td><td>${r.solicitante}</td><td>${r.sala}</td><td>${r.unidade||'Matriz'}</td><td>${formatDate(r.dataInicio)}</td><td><span class="badge badge-${r.status}">${r.status}</span></td>
   <td><div style="display:flex;gap:6px">
-    <button class="btn btn-sm btn-ghost" onclick="changeReservaStatus(${r.id},'ativo');renderPage('arquivados')"><i class="ti ti-refresh"></i> Reativar</button>
-    <button class="btn btn-sm btn-danger" onclick="deleteReserva(${r.id});renderPage('arquivados')"><i class="ti ti-trash"></i></button>
+    <button class="btn-icon" onclick="changeReservaStatus(${r.id},'ativo');renderPage('arquivados')" title="Reativar" style="color:var(--success)"><i class="ti ti-refresh"></i></button>
+    <button class="btn-icon" onclick="deleteReserva(${r.id});renderPage('arquivados')" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
   </div></td></tr>`).join('')}</tbody></table></div></div>`;
 }
 document.addEventListener('click',e=>{ if(e.target.matches('[data-arq]')){ $$('[data-arq]').forEach(t=>t.classList.remove('active')); e.target.classList.add('active'); $('#arq-content').innerHTML=e.target.dataset.arq==='chamados'?renderArqChamados():renderArqReservas(); } });
@@ -1105,7 +1105,7 @@ function renderUnidadePage(unidade) {
   </div>
   <div class="filter-bar">
     <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar equipamento..." id="search-unid"/></div>
-    <select class="filter-select" id="filter-unid-tipo"><option value="">Todos os tipos</option><option>Notebook</option><option>iPad</option><option>Tablet</option><option>Projetor</option><option>Caixa de Som</option><option>Microfone</option><option>Câmera</option><option>Filmadora</option><option>Monitor</option><option>Impressora</option><option>Rádio Comunicador Motorola</option><option>Mouse</option><option>Teclado</option><option>WebCam</option><option>Controle Projetor</option><option>Apresentador</option><option>Switch</option><option>Roteador</option><option>Outro</option></select>
+    <select class="filter-select" id="filter-unid-tipo"><option value="">Todos os tipos</option><option>Apresentador</option><option>Caixa de Som</option><option>Controle Projetor</option><option>Câmera</option><option>Filmadora</option><option>Impressora</option><option>Microfone</option><option>Monitor</option><option>Mouse</option><option>Notebook</option><option>Projetor</option><option>Rádio Comunicador Motorola</option><option>Tablet</option><option>Teclado</option><option>WebCam</option><option>iPad</option><option>Roteador</option><option>Switch</option><option>Outro</option></select>
     <button class="btn btn-primary" onclick="openModalEquipamento('${unidade}')"><i class="ti ti-plus"></i> Novo Equipamento</button>
   </div>
   <div class="card">
@@ -1145,7 +1145,7 @@ function equipamentos() {
   return `
   <div class="filter-bar">
     <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar..." id="search-equip"/></div>
-    <select class="filter-select" id="filter-equip-tipo"><option value="">Todos os tipos</option><option>Notebook</option><option>iPad</option><option>Tablet</option><option>Projetor</option><option>Caixa de Som</option><option>Microfone</option><option>Câmera</option><option>Filmadora</option><option>Monitor</option><option>Impressora</option><option>Rádio Comunicador Motorola</option><option>Mouse</option><option>Teclado</option><option>WebCam</option><option>Controle Projetor</option><option>Apresentador</option><option>Switch</option><option>Roteador</option><option>Outro</option></select>
+    <select class="filter-select" id="filter-equip-tipo"><option value="">Todos os tipos</option><option>Apresentador</option><option>Caixa de Som</option><option>Controle Projetor</option><option>Câmera</option><option>Filmadora</option><option>Impressora</option><option>Microfone</option><option>Monitor</option><option>Mouse</option><option>Notebook</option><option>Projetor</option><option>Rádio Comunicador Motorola</option><option>Tablet</option><option>Teclado</option><option>WebCam</option><option>iPad</option><option>Roteador</option><option>Switch</option><option>Outro</option></select>
     <select class="filter-select" id="filter-equip-uni"><option value="">Todas as unidades</option><option>Matriz</option><option>Ensino Médio</option></select>
     <button class="btn btn-primary" onclick="openModalEquipamento()"><i class="ti ti-plus"></i> Novo</button>
   </div>
@@ -1238,7 +1238,7 @@ function reservasAtivasPage() {
     </div>
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>#</th><th>Equipamento</th><th>Tipo</th><th>Solicitante</th><th>Cargo</th><th>Sala/Turma</th><th>Data</th><th>Horário</th><th>Qtd</th><th>Unidade</th><th>Observações</th><th>Ações</th></tr></thead>
+        <thead><tr><th>#</th><th>Equipamento</th><th>Solicitante / Cargo</th><th>Sala</th><th>Data / Horário</th><th>Qtd</th><th>Unidade</th><th>Ações</th></tr></thead>
         <tbody id="tbody-res-ativas">
           ${renderResAtivas(list)}
         </tbody>
@@ -1252,21 +1252,18 @@ function renderResAtivas(list) {
   return list.map(r=>`
   <tr>
     <td><strong style="color:var(--primary)">#${r.id}</strong></td>
-    <td><strong>${r.equipamento}</strong></td>
-    <td><span class="badge badge-reservado" style="font-size:11px">${r.equipamentoTipo}</span></td>
-    <td>${r.solicitante}</td>
-    <td style="font-size:12px;color:var(--gray-500)">${r.cargo}</td>
+    <td><strong>${r.equipamento}</strong><br><span class="text-muted" style="font-size:11px">${r.equipamentoTipo}</span></td>
+    <td>${r.solicitante}<br><span class="text-muted" style="font-size:11px">${r.cargo}</span></td>
     <td><strong>${r.sala}</strong></td>
-    <td><strong>${formatDate(r.dataInicio)}</strong></td>
-    <td>${r.horaInicio}–${r.horaFim}</td>
+    <td><strong>${formatDate(r.dataInicio)}</strong><br><span class="text-muted" style="font-size:11px">${r.horaInicio}–${r.horaFim}</span></td>
     <td style="text-align:center"><strong>${r.quantidade}</strong></td>
     <td>${r.unidade||'Matriz'}</td>
-    <td style="font-size:12px;color:var(--gray-500)">${r.obs||'—'}</td>
     <td>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">
-        <button class="btn btn-sm btn-ghost" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i> Editar</button>
-        <button class="btn btn-sm btn-success" onclick="changeReservaStatus(${r.id},'fechado');renderPage('reservas-ativas')" title="Fechar"><i class="ti ti-check"></i> Fechar</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteReserva(${r.id})" title="Excluir"><i class="ti ti-trash"></i></button>
+      <div style="display:flex;gap:4px">
+        <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar" style="color:var(--primary)"><i class="ti ti-edit"></i></button>
+        <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('reservas-ativas')" title="Fechar" style="color:var(--success)"><i class="ti ti-circle-check"></i></button>
+        <button class="btn-icon" onclick="changeReservaStatus(${r.id},'suspenso');renderPage('reservas-ativas')" title="Suspender" style="color:var(--warning)"><i class="ti ti-player-pause"></i></button>
+        <button class="btn-icon" onclick="deleteReserva(${r.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
       </div>
     </td>
   </tr>`).join('');
@@ -2049,7 +2046,7 @@ function renderRelatorioCharts() {
 // ===== MODALS: RESERVA =====
 function openModalReserva(reservaId=null, preData=null) {
   const r=reservaId?STATE.reservas.find(r=>r.id===reservaId):null;
-  const TIPOS=['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora','Rádio Comunicador Motorola','Mouse','Teclado','WebCam','Controle Projetor','Apresentador',...[...new Set(STATE.equipamentos.map(e=>e.tipo))].filter(t=>!['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora','Rádio Comunicador Motorola','Mouse','Teclado','WebCam','Controle Projetor','Apresentador'].includes(t)),'Outro'];
+  const TIPOS=['Apresentador', 'Caixa de Som', 'Controle Projetor', 'Câmera', 'Filmadora', 'Impressora', 'Microfone', 'Monitor', 'Mouse', 'Notebook', 'Projetor', 'Rádio Comunicador Motorola', 'Tablet', 'Teclado', 'WebCam', 'iPad', 'Roteador', 'Switch', 'Outro'];
   openModal(`
   <div class="modal modal-lg">
     <div class="modal-header">
@@ -2196,7 +2193,7 @@ function openModalChamado(chamadoId=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Categoria</label>
-          <select id="ch-cat"><option value="">Selecione...</option>${['Hardware','Software','Rede','Impressora','Acesso/Senha','E-mail','Telefone IP','Câmera','Sistema','Vídeo','Áudio/Som','Office','Internet/Web','Liberar Acesso','Canvas','Sophia','Verificar Vírus','Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
+          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Canvas', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Office', 'Rede', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
         </div>
         <div class="form-group">
           <label class="required">Prioridade</label>
@@ -2349,7 +2346,7 @@ function openModalEquipamento(unidadeFixa=null, equipId=null) {
     <div class="modal-body">
       <div class="form-group"><label class="required">Nome do Equipamento</label><input type="text" id="eq-nome" value="${e?.nome||''}"/></div>
       <div class="form-row">
-        <div class="form-group"><label class="required">Tipo</label><select id="eq-tipo">${['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora','Rádio Comunicador Motorola','Mouse','Teclado','WebCam','Controle Projetor','Apresentador','Switch','Roteador','Outro'].map(t=>`<option ${e?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="required">Tipo</label><select id="eq-tipo">${['Apresentador', 'Caixa de Som', 'Controle Projetor', 'Câmera', 'Filmadora', 'Impressora', 'Microfone', 'Monitor', 'Mouse', 'Notebook', 'Projetor', 'Rádio Comunicador Motorola', 'Tablet', 'Teclado', 'WebCam', 'iPad', 'Roteador', 'Switch', 'Outro'].map(t=>`<option ${e?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
         <div class="form-group"><label class="required">Nº Patrimônio</label><input type="text" id="eq-pat" value="${e?.patrimonio||''}"/></div>
       </div>
       <div class="form-row">

@@ -1662,3 +1662,72 @@ tbody td {
   50%  { width: 40%; margin-left: 30%; }
   100% { width: 20%; margin-left: 80%; }
 }
+
+/* ===== ELIMINAR SCROLL HORIZONTAL NAS PÁGINAS ===== */
+.page-content {
+  overflow-x: hidden;
+}
+
+/* Tabelas responsivas — reduzir padding em telas menores */
+.table-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Colunas de ação — largura mínima, sem quebra */
+tbody td:last-child {
+  white-space: nowrap;
+}
+
+/* Botões de ícone lado a lado compactos */
+.actions-cell {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+/* Tabelas com muitas colunas — fonte menor */
+.table-compact th,
+.table-compact td {
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+/* Cards não deixam overflow vazar */
+.card {
+  overflow: visible;
+  min-width: 0;
+}
+
+/* Main content não cria scroll desnecessário */
+.main-content {
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+/* Sidebar fixa — não empurra o conteúdo */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+  .main-content {
+    margin-left: 0;
+  }
+}
+
+/* Textos longos em células — quebrar graciosamente */
+tbody td {
+  word-break: break-word;
+  max-width: 220px;
+}
+
+tbody td strong {
+  word-break: normal;
+}
+
+/* Coluna de status — não quebrar */
+.badge {
+  white-space: nowrap;
+}
