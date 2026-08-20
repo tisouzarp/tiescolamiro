@@ -1105,7 +1105,7 @@ function renderUnidadePage(unidade) {
   </div>
   <div class="filter-bar">
     <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar equipamento..." id="search-unid"/></div>
-    <select class="filter-select" id="filter-unid-tipo"><option value="">Todos os tipos</option><option>Notebook</option><option>iPad</option><option>Projetor</option><option>Caixa de Som</option><option>Monitor</option><option>Impressora</option><option>Outro</option></select>
+    <select class="filter-select" id="filter-unid-tipo"><option value="">Todos os tipos</option><option>Notebook</option><option>iPad</option><option>Tablet</option><option>Projetor</option><option>Caixa de Som</option><option>Microfone</option><option>Câmera</option><option>Filmadora</option><option>Monitor</option><option>Impressora</option><option>Rádio Comunicador Motorola</option><option>Mouse</option><option>Teclado</option><option>WebCam</option><option>Controle Projetor</option><option>Apresentador</option><option>Switch</option><option>Roteador</option><option>Outro</option></select>
     <button class="btn btn-primary" onclick="openModalEquipamento('${unidade}')"><i class="ti ti-plus"></i> Novo Equipamento</button>
   </div>
   <div class="card">
@@ -1145,7 +1145,7 @@ function equipamentos() {
   return `
   <div class="filter-bar">
     <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar..." id="search-equip"/></div>
-    <select class="filter-select" id="filter-equip-tipo"><option value="">Todos os tipos</option><option>Notebook</option><option>iPad</option><option>Projetor</option><option>Caixa de Som</option><option>Monitor</option><option>Impressora</option><option>Outro</option></select>
+    <select class="filter-select" id="filter-equip-tipo"><option value="">Todos os tipos</option><option>Notebook</option><option>iPad</option><option>Tablet</option><option>Projetor</option><option>Caixa de Som</option><option>Microfone</option><option>Câmera</option><option>Filmadora</option><option>Monitor</option><option>Impressora</option><option>Rádio Comunicador Motorola</option><option>Mouse</option><option>Teclado</option><option>WebCam</option><option>Controle Projetor</option><option>Apresentador</option><option>Switch</option><option>Roteador</option><option>Outro</option></select>
     <select class="filter-select" id="filter-equip-uni"><option value="">Todas as unidades</option><option>Matriz</option><option>Ensino Médio</option></select>
     <button class="btn btn-primary" onclick="openModalEquipamento()"><i class="ti ti-plus"></i> Novo</button>
   </div>
@@ -2049,7 +2049,7 @@ function renderRelatorioCharts() {
 // ===== MODALS: RESERVA =====
 function openModalReserva(reservaId=null, preData=null) {
   const r=reservaId?STATE.reservas.find(r=>r.id===reservaId):null;
-  const TIPOS=['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora',...[...new Set(STATE.equipamentos.map(e=>e.tipo))].filter(t=>!['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora'].includes(t)),'Outro'];
+  const TIPOS=['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora','Rádio Comunicador Motorola','Mouse','Teclado','WebCam','Controle Projetor','Apresentador',...[...new Set(STATE.equipamentos.map(e=>e.tipo))].filter(t=>!['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora','Rádio Comunicador Motorola','Mouse','Teclado','WebCam','Controle Projetor','Apresentador'].includes(t)),'Outro'];
   openModal(`
   <div class="modal modal-lg">
     <div class="modal-header">
@@ -2349,7 +2349,7 @@ function openModalEquipamento(unidadeFixa=null, equipId=null) {
     <div class="modal-body">
       <div class="form-group"><label class="required">Nome do Equipamento</label><input type="text" id="eq-nome" value="${e?.nome||''}"/></div>
       <div class="form-row">
-        <div class="form-group"><label class="required">Tipo</label><select id="eq-tipo">${['Notebook','iPad','Projetor','Caixa de Som','Monitor','Impressora','Tablet','Switch','Roteador','Outro'].map(t=>`<option ${e?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="required">Tipo</label><select id="eq-tipo">${['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Filmadora','Monitor','Impressora','Rádio Comunicador Motorola','Mouse','Teclado','WebCam','Controle Projetor','Apresentador','Switch','Roteador','Outro'].map(t=>`<option ${e?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
         <div class="form-group"><label class="required">Nº Patrimônio</label><input type="text" id="eq-pat" value="${e?.patrimonio||''}"/></div>
       </div>
       <div class="form-row">
