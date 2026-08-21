@@ -1731,3 +1731,26 @@ tbody td strong {
 .badge {
   white-space: nowrap;
 }
+
+/* ===== SLA BADGE ===== */
+.sla-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* ===== QR CODE PRINT ===== */
+@media print {
+  body > *:not(.modal-overlay) { display: none !important; }
+  .modal-overlay { position: static !important; background: white !important; }
+  .modal { box-shadow: none !important; }
+  .modal-header, .modal-footer { display: none !important; }
+}
+
+/* ===== CONFIGURAÇÕES ===== */
+.config-section {
+  margin-bottom: 24px;
+}

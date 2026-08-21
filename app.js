@@ -153,6 +153,17 @@ function closeMigracaoModal() {
   if (el) el.remove();
 }
 
+// ===== SEGURANÇA: HASH DE SENHA =====
+async function hashSenha(senha) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(senha));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function verificarSenha(senha, hash) {
+  return await hashSenha(senha) === hash;
+}
+
 // ===== STATE =====
 const STATE = {
   currentUser: null,
@@ -195,6 +206,7 @@ const STATE = {
   nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1 },
   acompanhamentos: [], // { id, chamadoId, texto, autor, tipo, criado }
   filtros: { reserva: '', chamado: '', chamadoPrio: '', reservaSearch: '', chamadoSearch: '' },
+  sla: { Alta: 2, Media: 8, Baixa: 24 }, // horas de SLA por prioridade
 };
 
 function dateNow() { return new Date().toISOString().split('T')[0]; }
@@ -308,10 +320,29 @@ function attachAuthEvents() {
   $('#login-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 }
 
-function doLogin() {
+async function doLogin() {
   const u = $('#login-user').value.trim();
   const p = $('#login-pass').value;
-  const found = STATE.users.find(usr => (usr.usuario===u || usr.email===u) && usr.senha===p && usr.status==='ativo');
+  if (!u || !p) { toast('Preencha usuário e senha.', 'error'); return; }
+  // Suporta senha em texto puro (legado) e hasheada
+  let found = null;
+  for (const usr of STATE.users) {
+    if ((usr.usuario!==u && usr.email!==u) || usr.status!=='ativo') continue;
+    // Verificar se é hash (64 chars hex) ou texto puro
+    let ok = false;
+    if (usr.senha && usr.senha.length === 64 && /^[0-9a-f]+$/.test(usr.senha)) {
+      ok = await verificarSenha(p, usr.senha);
+    } else {
+      ok = usr.senha === p; // legado texto puro
+      if (ok) {
+        // Migrar para hash automaticamente
+        const h = await hashSenha(p);
+        usr.senha = h;
+        fbSave('users', usr.id, usr);
+      }
+    }
+    if (ok) { found = usr; break; }
+  }
   if (!found) { toast('Usuário ou senha inválidos.', 'error'); return; }
   STATE.currentUser = found;
   render();
@@ -394,6 +425,7 @@ function renderLayout() {
         <button class="nav-item ${STATE.currentPage==='equipamentos'?'active':''}" data-page="equipamentos"><i class="ti ti-devices"></i> Equipamentos</button>
         <button class="nav-item ${STATE.currentPage==='usuarios'?'active':''}" data-page="usuarios"><i class="ti ti-users"></i> Usuários</button>
         <button class="nav-item ${STATE.currentPage==='relatorios'?'active':''}" data-page="relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
+        <button class="nav-item ${STATE.currentPage==='configuracoes'?'active':''}" data-page="configuracoes"><i class="ti ti-settings"></i> Configurações</button>
         ` : `
         <span class="nav-section-title">Menu</span>
         <button class="nav-item ${STATE.currentPage==='novaReserva'?'active':''}" data-page="novaReserva"><i class="ti ti-calendar-plus"></i> Nova Reserva</button>
@@ -476,13 +508,14 @@ function renderPage(page) {
     'em-usuarios': ()=>paginaUnidade('usuarios','Ensino Médio'),
     'em-relatorios': ()=>paginaUnidade('relatorios','Ensino Médio'),
     'reservas-ativas': reservasAtivasPage,
+    'configuracoes': configuracoes,
   };
   content.innerHTML = pages[page] ? pages[page]() : '<p>Página não encontrada.</p>';
   attachPageEvents(page);
 }
 
 function attachPageEvents(page) {
-  if (page==='dashboard') setTimeout(()=>{ renderChartStatus(); renderChartCat(); }, 100);
+  if (page==='dashboard') setTimeout(()=>{ renderChartStatus(); renderChartCat(); renderChartTendencia(); }, 100);
   if (page==='reservas') attachTableFilter('search-reserva', 'filter-reserva-status', 'reservas-tbody', ()=>renderReservasRows(getFilteredReservas()));
   if (page==='chamados') attachTableFilter('search-chamado', 'filter-chamado-status', 'chamados-tbody', ()=>renderChamadosRows(getFilteredChamados()));
   if (page==='usuarios') attachTableFilter('search-user', 'filter-user-status', 'users-tbody', ()=>renderUserRows(STATE.users));
@@ -717,11 +750,19 @@ function dashboard() {
     </div>`;
   })()}
 
-  <div class="grid-2">
+  <div class="grid-2 mb-20">
     <div class="card">
       <div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Status dos Chamados</span></div>
       <div class="card-body"><div class="chart-container"><canvas id="chart-status"></canvas></div></div>
     </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-trending-up"></i> Tendência — Chamados vs Reservas</span></div>
+      <div class="card-body"><div class="chart-container"><canvas id="chart-tendencia"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card" style="display:none"><div class="card-body"></div></div>
     <div class="card">
       <div class="card-header">
         <span class="card-title"><i class="ti ti-headset"></i> Chamados Recentes</span>
@@ -746,6 +787,35 @@ function renderChartStatus() {
   const ctx=document.getElementById('chart-status'); if(!ctx) return;
   new Chart(ctx, { type:'doughnut', data:{ labels:['Aberto','Em Andamento','Fechado','Suspenso'], datasets:[{ data:[STATE.chamados.filter(c=>c.status==='aberto').length, STATE.chamados.filter(c=>c.status==='andamento').length, STATE.chamados.filter(c=>c.status==='fechado').length, STATE.chamados.filter(c=>c.status==='suspenso').length], backgroundColor:['#e74c3c','#e67e22','#27ae60','#95a5a6'], borderWidth:0 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Nunito', size:12 } } } } } });
 }
+function renderChartTendencia() {
+  const ctx = document.getElementById('chart-tendencia'); if (!ctx) return;
+  const meses = [];
+  const chamadosPorMes = [];
+  const reservasPorMes = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const label = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const prefix = `${y}-${m}`;
+    meses.push(label);
+    chamadosPorMes.push(STATE.chamados.filter(c => c.criado?.startsWith(prefix)).length);
+    reservasPorMes.push(STATE.reservas.filter(r => r.dataInicio?.startsWith(prefix)).length);
+  }
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: meses,
+      datasets: [
+        { label: 'Chamados', data: chamadosPorMes, borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,.08)', tension: .4, fill: true, pointRadius: 4 },
+        { label: 'Reservas',  data: reservasPorMes,  borderColor: '#0073c8', backgroundColor: 'rgba(0,115,200,.08)', tension: .4, fill: true, pointRadius: 4 },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Nunito', size: 12 } } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+  });
+}
+
 function renderChartCat() {
   const ctx=document.getElementById('chart-cat'); if(!ctx) return;
   const cats={};
@@ -1124,6 +1194,7 @@ function renderUnidadeEquips(list) {
     <td>${equipStatus(e.status)}</td>
     <td><div style="display:flex;gap:4px">
       <button class="btn-icon" onclick="editEquipamento(${e.id})" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-icon" onclick="abrirQRCode('${e.patrimonio}','${e.nome}')" title="QR Code" style="color:var(--primary)"><i class="ti ti-qrcode"></i></button>
       <button class="btn-icon" onclick="deleteEquipamento(${e.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
     </div></td>
   </tr>`).join('');
@@ -1340,6 +1411,16 @@ function relatorios() {
     <button class="btn btn-primary" onclick="gerarRelatorio()"><i class="ti ti-refresh"></i> Atualizar</button>
     <div style="margin-left:auto;display:flex;gap:8px">
       <button class="btn btn-ghost" onclick="window.print()"><i class="ti ti-printer"></i> Imprimir / PDF</button>
+    <div style="position:relative" id="export-wrap">
+      <button class="btn btn-ghost" onclick="toggleExportMenu()"><i class="ti ti-download"></i> Exportar Excel</button>
+      <div id="export-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:white;border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);z-index:200;min-width:180px;overflow:hidden">
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarReservas();document.getElementById('export-menu').style.display='none'"><i class="ti ti-calendar-event"></i> Reservas</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarChamados();document.getElementById('export-menu').style.display='none'"><i class="ti ti-headset"></i> Chamados</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarInventario();document.getElementById('export-menu').style.display='none'"><i class="ti ti-server"></i> Inventário</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarLicencas();document.getElementById('export-menu').style.display='none'"><i class="ti ti-license"></i> Licenças</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarEquipamentos();document.getElementById('export-menu').style.display='none'"><i class="ti ti-devices"></i> Equipamentos</button>
+      </div>
+    </div>
     </div>
   </div>
 
@@ -2172,7 +2253,16 @@ function salvarReserva(id) {
   const qtd=parseInt($('#res-qtd')?.value)||1, obs=$('#res-obs')?.value||'', unidade=$('#res-unidade')?.value||'Matriz';
   if(!tipo||!equipNome||!cargo||!nome||!sala||!data||!hinicio||!hfim){ toast('Preencha todos os campos obrigatórios.','error'); return; }
   if(id){ const r=STATE.reservas.find(r=>r.id===id); if(r){ Object.assign(r,{equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade}); fbSave('reservas',r.id,r); } toast('Reserva atualizada!'); }
-  else { const nr={id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow()}; STATE.reservas.push(nr); fbSave('reservas',nr.id,nr); addNotification('Nova reserva criada',`${nome} reservou ${equipNome}`,'ti-calendar-plus'); toast('Reserva criada!'); }
+  else {
+    const recorrencia = $('#res-recorrencia')?.value || '';
+    const datas = gerarDatasRecorrentes(data, recorrencia);
+    for (const dt of datas) {
+      const nr={id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:dt,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow(),recorrencia:recorrencia||null};
+      STATE.reservas.push(nr); fbSave('reservas',nr.id,nr);
+    }
+    addNotification('Nova reserva criada',`${nome} reservou ${equipNome}${datas.length>1?' ('+datas.length+'x)':''}`, 'ti-calendar-plus');
+    toast(datas.length > 1 ? `${datas.length} reservas criadas!` : 'Reserva criada!');
+  }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
 
@@ -2437,15 +2527,16 @@ function openModalUsuario(userId=null) {
   </div>`);
 }
 function editUsuario(id){ openModalUsuario(id); }
-function salvarUsuario(id) {
+async function salvarUsuario(id) {
   const nome=$('#usr-nome')?.value.trim(), email=$('#usr-email')?.value.trim(), login=$('#usr-login')?.value.trim(), senha=$('#usr-senha')?.value, role=$('#usr-role')?.value, unidade=$('#usr-unidade')?.value||'Matriz';
   if(!nome||!email||!login){ toast('Preencha nome, e-mail e usuário.','error'); return; }
   if(!id&&!senha){ toast('Defina uma senha.','error'); return; }
   if(senha&&senha.length<6){ toast('Senha mínimo 6 caracteres.','error'); return; }
-  if(id){ const u=STATE.users.find(u=>u.id===id); if(u){ Object.assign(u,{nome,email,usuario:login,role,unidade}); if(senha) u.senha=senha; fbSave('users',u.id,u); } toast('Usuário atualizado!'); }
+  if(id){ const u=STATE.users.find(u=>u.id===id); if(u){ Object.assign(u,{nome,email,usuario:login,role,unidade}); if(senha){ u.senha=senha.length===64&&/^[0-9a-f]+$/.test(senha)?senha:await hashSenha(senha); } fbSave('users',u.id,u); } toast('Usuário atualizado!'); }
   else {
     if(STATE.users.find(u=>u.usuario===login||u.email===email)){ toast('Usuário ou e-mail já existe.','error'); return; }
-    const nu={id:STATE.nextId.usuario++,nome,email,usuario:login,senha,role,status:'ativo',unidade,criado:dateNow()};
+    const senhaHash = senha.length===64&&/^[0-9a-f]+$/.test(senha)?senha:await hashSenha(senha);
+    const nu={id:STATE.nextId.usuario++,nome,email,usuario:login,senha:senhaHash,role,status:'ativo',unidade,criado:dateNow()};
     STATE.users.push(nu); fbSave('users',nu.id,nu);
     addNotification('Novo usuário cadastrado',nome,'ti-user-plus'); toast('Usuário criado!');
   }
@@ -2775,6 +2866,225 @@ function salvarAcompanhamento(chamadoId) {
   renderPage(STATE.currentPage);
 }
 
+
+
+
+function gerarDatasRecorrentes(dataBase, tipo) {
+  const datas = [dataBase];
+  if (!tipo) return datas;
+  const d = new Date(dataBase + 'T12:00:00');
+  if (tipo === 'semanal') {
+    for (let i = 1; i < 4; i++) { d.setDate(d.getDate() + 7); datas.push(d.toISOString().split('T')[0]); }
+  } else if (tipo === 'quinzenal') {
+    for (let i = 1; i < 2; i++) { d.setDate(d.getDate() + 14); datas.push(d.toISOString().split('T')[0]); }
+  } else if (tipo === 'diario') {
+    let count = 0;
+    while (count < 4) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) { datas.push(d.toISOString().split('T')[0]); count++; }
+    }
+  }
+  return datas;
+}
+
+// ===== EXPORTAR DADOS =====
+function exportarCSV(dados, nomeArquivo) {
+  if (!dados || !dados.length) { toast('Nenhum dado para exportar.', 'warning'); return; }
+  const cols = Object.keys(dados[0]).filter(k => !k.startsWith('_'));
+  const header = cols.join(';');
+  const rows = dados.map(row => cols.map(c => {
+    const v = row[c] ?? '';
+    return `"${String(v).replace(/"/g, '""')}"`;
+  }).join(';'));
+  const csv = '﻿' + header + '\n' + rows.join('\n'); // BOM para Excel
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nomeArquivo + '.csv'; a.click();
+  URL.revokeObjectURL(url);
+  toast('Arquivo CSV exportado! Abra no Excel.', 'success');
+}
+
+function toggleExportMenu() {
+  const m = document.getElementById('export-menu');
+  if (!m) return;
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+  if (m.style.display !== 'none') {
+    setTimeout(() => document.addEventListener('click', function h(e) {
+      if (!document.getElementById('export-wrap')?.contains(e.target)) { m.style.display='none'; document.removeEventListener('click',h); }
+    }), 10);
+  }
+}
+
+function exportarReservas() { exportarCSV(STATE.reservas, 'reservas-miro'); }
+function exportarChamados() { exportarCSV(STATE.chamados, 'chamados-miro'); }
+function exportarInventario() { exportarCSV(STATE.inventario, 'inventario-miro'); }
+function exportarLicencas() { exportarCSV(STATE.licencas, 'licencas-miro'); }
+function exportarEquipamentos() { exportarCSV(STATE.equipamentos, 'equipamentos-miro'); }
+
+
+function configuracoes() {
+  return `
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-clock"></i> SLA — Tempo de Resposta</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Define o prazo máximo para atendimento de chamados por prioridade.</p>
+        <div class="form-group">
+          <label>🔴 Prioridade Alta (horas)</label>
+          <input type="number" id="sla-alta" value="${STATE.sla.Alta}" min="1" max="72" style="max-width:120px;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:var(--font);font-size:14px"/>
+        </div>
+        <div class="form-group">
+          <label>🟡 Prioridade Média (horas)</label>
+          <input type="number" id="sla-media" value="${STATE.sla.Media}" min="1" max="168" style="max-width:120px;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:var(--font);font-size:14px"/>
+        </div>
+        <div class="form-group">
+          <label>🟢 Prioridade Baixa (horas)</label>
+          <input type="number" id="sla-baixa" value="${STATE.sla.Baixa}" min="1" max="720" style="max-width:120px;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:var(--font);font-size:14px"/>
+        </div>
+        <button class="btn btn-primary" onclick="salvarSLA()"><i class="ti ti-check"></i> Salvar SLA</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-database-export"></i> Exportar Dados</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Baixe os dados do sistema em formato CSV (compatível com Excel).</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-ghost" onclick="exportarReservas()"><i class="ti ti-calendar-event"></i> Exportar Reservas</button>
+          <button class="btn btn-ghost" onclick="exportarChamados()"><i class="ti ti-headset"></i> Exportar Chamados</button>
+          <button class="btn btn-ghost" onclick="exportarInventario()"><i class="ti ti-server"></i> Exportar Inventário</button>
+          <button class="btn btn-ghost" onclick="exportarLicencas()"><i class="ti ti-license"></i> Exportar Licenças</button>
+          <button class="btn btn-ghost" onclick="exportarEquipamentos()"><i class="ti ti-devices"></i> Exportar Equipamentos</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-shield-lock"></i> Segurança</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Altere sua senha de acesso ao sistema.</p>
+        <div class="form-group">
+          <label>Senha Atual</label>
+          <input type="password" id="senha-atual" placeholder="••••••••"/>
+        </div>
+        <div class="form-group">
+          <label>Nova Senha</label>
+          <input type="password" id="senha-nova" placeholder="Mínimo 6 caracteres"/>
+        </div>
+        <div class="form-group">
+          <label>Confirmar Nova Senha</label>
+          <input type="password" id="senha-conf" placeholder="Repita a nova senha"/>
+        </div>
+        <button class="btn btn-primary" onclick="alterarSenha()"><i class="ti ti-lock"></i> Alterar Senha</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-info-circle"></i> Sobre o Sistema</span></div>
+      <div class="card-body">
+        <div style="text-align:center;padding:20px">
+          <img src="logo.png" alt="Escola Miró" style="max-height:70px;object-fit:contain;margin-bottom:16px" onerror="this.style.display='none'">
+          <h3 style="font-size:18px;font-weight:800;color:var(--gray-900)">TI - Escola Miró</h3>
+          <p style="font-size:13px;color:var(--gray-500);margin-top:6px">Sistema de Chamados e Reservas</p>
+          <p style="font-size:13px;color:var(--gray-500)">Versão 7.3 | Firebase Firestore</p>
+          <div style="margin-top:16px;padding:12px;background:var(--primary-light);border-radius:8px">
+            <p style="font-size:12px;color:var(--primary);font-weight:600">Responsável TI: Tiago Souza</p>
+            <p style="font-size:11px;color:var(--gray-500);margin-top:2px">Copyright © 2026 Tiago Souza. Todos os direitos reservados.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function salvarSLA() {
+  const alta  = parseInt($('#sla-alta')?.value) || 2;
+  const media = parseInt($('#sla-media')?.value) || 8;
+  const baixa = parseInt($('#sla-baixa')?.value) || 24;
+  STATE.sla = { Alta: alta, Media: media, Baixa: baixa };
+  saveState();
+  fbSave('config', 'sla', { sla: STATE.sla });
+  toast('SLA atualizado!');
+}
+
+async function alterarSenha() {
+  const atual = $('#senha-atual')?.value;
+  const nova  = $('#senha-nova')?.value;
+  const conf  = $('#senha-conf')?.value;
+  if (!atual || !nova || !conf) { toast('Preencha todos os campos.', 'error'); return; }
+  if (nova !== conf) { toast('As senhas novas não coincidem.', 'error'); return; }
+  if (nova.length < 6) { toast('Mínimo 6 caracteres.', 'error'); return; }
+  const u = STATE.currentUser;
+  let okAtual = false;
+  if (u.senha && u.senha.length === 64) {
+    okAtual = await verificarSenha(atual, u.senha);
+  } else {
+    okAtual = u.senha === atual;
+  }
+  if (!okAtual) { toast('Senha atual incorreta.', 'error'); return; }
+  u.senha = await hashSenha(nova);
+  fbSave('users', u.id, u);
+  saveState();
+  toast('Senha alterada com sucesso!');
+  $('#senha-atual').value = '';
+  $('#senha-nova').value = '';
+  $('#senha-conf').value = '';
+}
+
+// ===== QR CODE =====
+function abrirQRCode(patrimonio, nome) {
+  const texto = encodeURIComponent(patrimonio);
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${texto}`;
+  openModal(`
+  <div class="modal" style="max-width:360px">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ti ti-qrcode"></i> QR Code — ${patrimonio}</span>
+      <button class="btn-icon" onclick="closeModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" style="text-align:center;padding:32px">
+      <img src="${qrUrl}" alt="QR Code" style="width:200px;height:200px;border:8px solid white;box-shadow:var(--shadow-lg);border-radius:8px">
+      <div style="margin-top:16px">
+        <p style="font-size:15px;font-weight:800;color:var(--gray-900)">${nome}</p>
+        <p style="font-size:13px;color:var(--gray-500);margin-top:4px">Patrimônio: <strong>${patrimonio}</strong></p>
+      </div>
+      <div style="margin-top:20px;display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-primary" onclick="imprimirQR()"><i class="ti ti-printer"></i> Imprimir</button>
+        <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+      </div>
+    </div>
+  </div>`);
+}
+
+function imprimirQR() {
+  window.print();
+}
+
+// ===== SLA — TEMPO DE RESPOSTA =====
+function calcularSLA(chamado) {
+  if (chamado.status === 'fechado' || chamado.status === 'cancelado') return null;
+  const slaHoras = STATE.sla[chamado.prioridade] || 8;
+  const criado = new Date(chamado.criado + 'T00:00:00');
+  const limite = new Date(criado.getTime() + slaHoras * 3600000);
+  const agora = new Date();
+  const diffMs = limite - agora;
+  const diffH = Math.floor(diffMs / 3600000);
+  const diffM = Math.floor((diffMs % 3600000) / 60000);
+  if (diffMs < 0) return { vencido: true, label: `Vencido há ${Math.abs(diffH)}h`, cor: 'var(--danger)' };
+  if (diffH < 2)  return { vencido: false, label: `${diffH}h ${diffM}min`, cor: 'var(--danger)' };
+  if (diffH < 6)  return { vencido: false, label: `${diffH}h restantes`, cor: 'var(--warning)' };
+  return { vencido: false, label: `${diffH}h restantes`, cor: 'var(--success)' };
+}
+
+function renderSLABadge(chamado) {
+  const sla = calcularSLA(chamado);
+  if (!sla) return '';
+  return `<span style="font-size:10px;font-weight:700;color:${sla.cor};display:flex;align-items:center;gap:3px;margin-top:2px">
+    <i class="ti ti-clock" style="font-size:11px"></i>${sla.label}
+  </span>`;
+}
+
 // ===== AUTOCOMPLETE USUÁRIOS =====
 function showUserSuggest(input, listId) {
   const val = input.value.toLowerCase();
@@ -2924,6 +3234,13 @@ Object.assign(window, {
   openModalReservaData,
   // Unidades
   renderUnidadeCharts, filtrarResAtivas,
+  // Melhorias v7.3
+  abrirQRCode, imprimirQR,
+  exportarCSV, exportarReservas, exportarChamados, exportarInventario, exportarLicencas, exportarEquipamentos,
+  toggleExportMenu,
+  configuracoes, salvarSLA, alterarSenha,
+  renderChartTendencia,
+  gerarDatasRecorrentes,
   // Misc
   STATE,
 });
