@@ -2212,24 +2212,29 @@ function openModalReserva(reservaId=null, preData=null) {
         </div>
       </div>
 
-      <!-- HORÁRIO MANUAL (opcional) -->
-      <div class="form-group">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="toggle-horario-manual" onchange="toggleHorarioManual(this)" ${r&&!r.aulas?'checked':''}>
-          <span style="font-size:13px;font-weight:600;color:var(--gray-600)">Definir horário manual (opcional)</span>
-        </label>
-        <div id="horario-manual-wrap" style="display:${r&&!r.aulas?'flex':'none'};gap:12px;margin-top:10px;align-items:center;flex-wrap:wrap">
+      <!-- BOTÃO HORÁRIO MANUAL — integrado na grade de aulas -->
+      <div class="form-group" style="margin-top:-4px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button type="button" id="btn-horario-manual"
+            onclick="toggleHorarioManual()"
+            class="aula-horario-btn ${r&&!r.aulas?'ativo':''}"
+            style="${r&&!r.aulas?'background:var(--primary);color:white;border-color:var(--primary)':''}">
+            <i class="ti ti-clock"></i> Horário manual
+          </button>
+          <span id="horario-manual-preview" style="font-size:12px;color:var(--gray-400)"></span>
+        </div>
+        <div id="horario-manual-wrap" style="display:${r&&!r.aulas?'flex':'none'};gap:12px;margin-top:12px;align-items:flex-end;flex-wrap:wrap;padding:14px;background:var(--gray-50);border-radius:var(--radius-lg);border:1.5px solid var(--gray-200)">
           <div>
-            <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Início</label>
-            <select id="res-hinicio" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px">
+            <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:6px">Início</label>
+            <select id="res-hinicio" style="padding:9px 12px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;outline:none" onchange="atualizarPreviewHorario()">
               <option value="">-- Selecione --</option>
               ${HORAS.map(h=>`<option ${r?.horaInicio===h?'selected':''}>${h}</option>`).join('')}
             </select>
           </div>
-          <span style="font-size:18px;color:var(--gray-300);padding-top:18px">→</span>
+          <span style="font-size:22px;color:var(--gray-300);padding-bottom:4px">→</span>
           <div>
-            <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Fim</label>
-            <select id="res-hfim" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px">
+            <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:6px">Fim</label>
+            <select id="res-hfim" style="padding:9px 12px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;outline:none" onchange="atualizarPreviewHorario()">
               <option value="">-- Selecione --</option>
               ${HORAS.map(h=>`<option ${r?.horaFim===h?'selected':''}>${h}</option>`).join('')}
             </select>
@@ -2293,9 +2298,33 @@ function atualizarEstiloAulas() {
   });
 }
 
-function toggleHorarioManual(cb) {
+function toggleHorarioManual() {
   const wrap = document.getElementById('horario-manual-wrap');
-  if (wrap) wrap.style.display = cb.checked ? 'flex' : 'none';
+  const btn  = document.getElementById('btn-horario-manual');
+  if (!wrap) return;
+  const isOpen = wrap.style.display !== 'none';
+  wrap.style.display = isOpen ? 'none' : 'flex';
+  if (btn) {
+    btn.style.background     = isOpen ? '' : 'var(--primary)';
+    btn.style.color          = isOpen ? '' : 'white';
+    btn.style.borderColor    = isOpen ? '' : 'var(--primary)';
+  }
+  if (!isOpen) {
+    // Ao abrir, limpar seleção de aulas para evitar conflito
+    $$('.aula-cb').forEach(c => c.checked = false);
+    const todas = document.getElementById('aula-todas');
+    if (todas) todas.checked = false;
+    atualizarEstiloAulas();
+  } else {
+    atualizarPreviewHorario();
+  }
+}
+
+function atualizarPreviewHorario() {
+  const hi = document.getElementById('res-hinicio')?.value;
+  const hf = document.getElementById('res-hfim')?.value;
+  const prev = document.getElementById('horario-manual-preview');
+  if (prev) prev.textContent = hi && hf ? `${hi} – ${hf}` : '';
 }
 
 function getAulasSelecionadas() {
@@ -2337,7 +2366,7 @@ function salvarReserva(id) {
   const salaVal=$('#res-sala')?.value, sala=salaVal==='Outro'?($('#res-outro-sala')?.value||'').trim():salaVal;
   const data=$('#res-data')?.value;
   const aulasSel = getAulasSelecionadas();
-  const horarioManual = document.getElementById('toggle-horario-manual')?.checked;
+  const horarioManual = document.getElementById('horario-manual-wrap')?.style.display !== 'none';
   let hinicio = '', hfim = '';
   if (horarioManual) {
     hinicio = $('#res-hinicio')?.value || '';
@@ -2932,34 +2961,8 @@ function salvarAcompanhamento(chamadoId) {
   saveState();
   addNotification(`Acompanhamento #${chamadoId}`, `${STATE.currentUser.nome}: ${texto.slice(0,40)}...`, 'ti-message-circle');
   toast('Acompanhamento registrado!');
-  // Atualiza a lista dentro do modal sem fechar e reabrir
-  const listaEl = document.getElementById('acomp-lista');
-  if (listaEl) {
-    const lista = STATE.acompanhamentos.filter(a=>a.chamadoId===chamadoId).sort((a,b)=>b.id-a.id);
-    listaEl.innerHTML = lista.map(a=>`
-      <div class="acomp-item acomp-${a.tipo}">
-        <div class="acomp-avatar">${initials(a.autor)}</div>
-        <div class="acomp-body">
-          <div class="acomp-header">
-            <strong>${a.autor}</strong>
-            <span class="acomp-tipo-badge acomp-tipo-${a.tipo}">${{observacao:'Observação',solucao:'Solução',pendencia:'Pendência',retorno:'Retorno ao usuário'}[a.tipo]||a.tipo}</span>
-            <span style="margin-left:auto;font-size:11px;color:var(--gray-400)">${formatDate(a.criado)} às ${a.hora}</span>
-          </div>
-          <div class="acomp-texto">${a.texto.replace(/\n/g,'<br>')}</div>
-        </div>
-      </div>`).join('');
-    // Limpar o campo de texto e resetar tipo
-    const txtEl=document.getElementById('acomp-texto'); if(txtEl) txtEl.value='';
-    const tipoEl=document.getElementById('acomp-tipo'); if(tipoEl) tipoEl.value='observacao';
-    const stEl=document.getElementById('acomp-status'); if(stEl) stEl.value='';
-    // Atualizar status no cabeçalho do modal se mudou
-    if(novoStatus){
-      const badgeEl=document.querySelector('.modal .badge[class*="badge-"]');
-      if(badgeEl){ badgeEl.className=`badge badge-${novoStatus}`; badgeEl.textContent=novoStatus; }
-    }
-  } else {
-    closeModal();
-  }
+  // Fechar modal e atualizar a página
+  closeModal();
   renderPage(STATE.currentPage);
 }
 
@@ -3332,7 +3335,7 @@ Object.assign(window, {
   // Unidades
   renderUnidadeCharts, filtrarResAtivas,
   // Aulas
-  toggleTodasAulas, sincronizarAulas, atualizarEstiloAulas, toggleHorarioManual,
+  toggleTodasAulas, sincronizarAulas, atualizarEstiloAulas, toggleHorarioManual, atualizarPreviewHorario,
   getAulasSelecionadas, getHorarioDasAulas, getLabelAulas,
   // Melhorias v7.3
   abrirQRCode, imprimirQR,

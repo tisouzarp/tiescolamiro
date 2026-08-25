@@ -1850,3 +1850,31 @@ tbody td strong {
   color: var(--primary);
   opacity: .75;
 }
+
+/* ===== BOTÃO HORÁRIO MANUAL ===== */
+.aula-horario-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 2px dashed var(--gray-300);
+  border-radius: var(--radius-lg);
+  background: white;
+  color: var(--gray-500);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.aula-horario-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-light);
+}
+.aula-horario-btn.ativo {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  border-style: solid;
+}
