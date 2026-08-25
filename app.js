@@ -709,7 +709,7 @@ function dashboard() {
                 <td><strong>${r.equipamento}</strong><br><span class="text-muted">${r.equipamentoTipo}</span></td>
                 <td>${r.solicitante}</td><td><span class="text-muted">${r.cargo}</span></td>
                 <td><strong>${r.sala}</strong></td>
-                <td><span class="badge badge-reservado">${r.horaInicio}–${r.horaFim}</span></td>
+                <td>${r.aulas&&r.aulas.length?`<span class="badge badge-reservado" style="font-size:11px">${getLabelAulas(r.aulas)}</span>`:r.horaInicio?`<span class="badge badge-reservado">${r.horaInicio}–${r.horaFim}</span>`:"—"}</td>
                 <td><strong>${r.quantidade}</strong></td><td>${r.unidade||'Matriz'}</td>
                 <td><span class="badge badge-${r.status}">${r.status}</span></td>
                 <td><div style="display:flex;gap:4px">
@@ -737,7 +737,7 @@ function dashboard() {
             <tr>
               <td><strong>${r.equipamento}</strong></td><td>${r.solicitante}</td>
               <td>${r.sala}</td><td>${formatDate(r.dataInicio)}</td>
-              <td>${r.horaInicio}–${r.horaFim}</td><td>${r.unidade||'Matriz'}</td>
+              <td>${r.aulas&&r.aulas.length?`<span class="badge badge-reservado" style="font-size:11px">${getLabelAulas(r.aulas)}</span><br><span class="text-muted" style="font-size:11px">${r.horaInicio}–${r.horaFim}</span>`:r.horaInicio?`${r.horaInicio}–${r.horaFim}`:"—"}</td><td>${r.unidade||'Matriz'}</td>
               <td><div style="display:flex;gap:4px">
                 <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
                 <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('dashboard')" title="Fechar" style="color:var(--success)"><i class="ti ti-check"></i></button>
@@ -886,6 +886,14 @@ function openModalReservaData(ds) { openModalReserva(null, ds); }
 // ===== RESERVAS =====
 const CARGOS=['Administrativo','Aluno','Assistente','Coordenador(a)','Diretor(a)','Estagiário(a)','Professor(a)'];
 const SALAS=['Grupo 1','Grupo 2','Grupo 3','Grupo 4','Grupo 5','1º Ano','2º Ano','3º Ano','4º Ano','5º Ano','6º Ano','7º Ano','8º Ano','9º Ano','1º Ano EM','2º Ano EM','3º Ano EM','Aula de Apoio','Reunião','Outro'];
+
+// ===== AULAS — horários padrão =====
+const AULAS = [
+  { id: 'a1', label: '1ª Aula', inicio: '07:00', fim: '07:50' },
+  { id: 'a2', label: '2ª Aula', inicio: '07:50', fim: '08:40' },
+  { id: 'a3', label: '3ª Aula', inicio: '08:40', fim: '09:30' },
+  { id: 'a4', label: '4ª Aula', inicio: '09:30', fim: '10:20' },
+];
 const HORAS=(()=>{const h=[];for(let i=6;i<24;i++)for(let m=0;m<60;m+=5)h.push(`${String(i).padStart(2,'0')}:${String(m).padStart(2,'0')}`);return h;})();
 
 function getFilteredReservas() {
@@ -920,7 +928,7 @@ function renderReservasRows(list) {
     <td><span class="text-muted">${r.cargo}</span></td>
     <td>${r.sala}</td>
     <td>${formatDate(r.dataInicio)}</td>
-    <td>${r.horaInicio}–${r.horaFim}</td>
+    <td>${r.aulas&&r.aulas.length?`<span class="badge badge-reservado" style="font-size:11px">${getLabelAulas(r.aulas)}</span><br><span class="text-muted" style="font-size:11px">${r.horaInicio}–${r.horaFim}</span>`:r.horaInicio?`${r.horaInicio}–${r.horaFim}`:"—"}</td>
     <td><strong>${r.quantidade}</strong></td>
     <td>${r.unidade||'Matriz'}</td>
     <td><span class="badge badge-${r.status}">${r.status}</span></td>
@@ -1326,7 +1334,7 @@ function renderResAtivas(list) {
     <td><strong>${r.equipamento}</strong><br><span class="text-muted" style="font-size:11px">${r.equipamentoTipo}</span></td>
     <td>${r.solicitante}<br><span class="text-muted" style="font-size:11px">${r.cargo}</span></td>
     <td><strong>${r.sala}</strong></td>
-    <td><strong>${formatDate(r.dataInicio)}</strong><br><span class="text-muted" style="font-size:11px">${r.horaInicio}–${r.horaFim}</span></td>
+    <td><strong>${formatDate(r.dataInicio)}</strong><br><span class="text-muted" style="font-size:11px">${r.aulas&&r.aulas.length?getLabelAulas(r.aulas):r.horaInicio?`${r.horaInicio}–${r.horaFim}`:"—"}</span></td>
     <td style="text-align:center"><strong>${r.quantidade}</strong></td>
     <td>${r.unidade||'Matriz'}</td>
     <td>
@@ -2180,18 +2188,52 @@ function openModalReserva(reservaId=null, preData=null) {
         <label class="required">Especifique a sala</label>
         <input type="text" id="res-outro-sala" placeholder="Nome da sala..." />
       </div>
-      <div class="form-row-3">
-        <div class="form-group">
-          <label class="required">Data da Reserva</label>
-          <input type="date" id="res-data" value="${r?.dataInicio||preData||dateNow()}" />
+      <!-- DATA -->
+      <div class="form-group">
+        <label class="required">Data da Reserva</label>
+        <input type="date" id="res-data" value="${r?.dataInicio||preData||dateNow()}" style="max-width:200px"/>
+      </div>
+
+      <!-- SELETOR DE AULAS -->
+      <div class="form-group">
+        <label>Período / Aulas</label>
+        <div class="aulas-grid">
+          <label class="aula-check todas" id="label-todas">
+            <input type="checkbox" id="aula-todas" onchange="toggleTodasAulas(this)">
+            <span class="aula-check-box"><i class="ti ti-checks"></i></span>
+            <span class="aula-check-label">Todas as Aulas</span>
+          </label>
+          ${AULAS.map(a=>`
+          <label class="aula-check" id="label-${a.id}">
+            <input type="checkbox" class="aula-cb" id="aula-${a.id}" value="${a.id}" onchange="sincronizarAulas()" ${r?.aulas&&r.aulas.includes(a.id)?'checked':''}>
+            <span class="aula-check-box">${a.label.split('ª')[0]}ª</span>
+            <span class="aula-check-label">${a.label}<br><small>${a.inicio} – ${a.fim}</small></span>
+          </label>`).join('')}
         </div>
-        <div class="form-group">
-          <label class="required">Horário Início</label>
-          <select id="res-hinicio">${HORAS.map(h=>`<option ${r?.horaInicio===h?'selected':''}>${h}</option>`).join('')}</select>
-        </div>
-        <div class="form-group">
-          <label class="required">Horário Fim</label>
-          <select id="res-hfim">${HORAS.map(h=>`<option ${r?.horaFim===h?'selected':''}>${h}</option>`).join('')}</select>
+      </div>
+
+      <!-- HORÁRIO MANUAL (opcional) -->
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="toggle-horario-manual" onchange="toggleHorarioManual(this)" ${r&&!r.aulas?'checked':''}>
+          <span style="font-size:13px;font-weight:600;color:var(--gray-600)">Definir horário manual (opcional)</span>
+        </label>
+        <div id="horario-manual-wrap" style="display:${r&&!r.aulas?'flex':'none'};gap:12px;margin-top:10px;align-items:center;flex-wrap:wrap">
+          <div>
+            <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Início</label>
+            <select id="res-hinicio" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px">
+              <option value="">-- Selecione --</option>
+              ${HORAS.map(h=>`<option ${r?.horaInicio===h?'selected':''}>${h}</option>`).join('')}
+            </select>
+          </div>
+          <span style="font-size:18px;color:var(--gray-300);padding-top:18px">→</span>
+          <div>
+            <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Fim</label>
+            <select id="res-hfim" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px">
+              <option value="">-- Selecione --</option>
+              ${HORAS.map(h=>`<option ${r?.horaFim===h?'selected':''}>${h}</option>`).join('')}
+            </select>
+          </div>
         </div>
       </div>
       <div class="form-row">
@@ -2230,6 +2272,50 @@ function updateEquipList(selectedEquip='') {
   sel.innerHTML=`<option value="">Selecione...</option>${extraOption}${list.map(e=>`<option value="${e.id}" ${e.nome===selectedEquip?'selected':''}>${e.nome} (${e.status})</option>`).join('')}<option value="outro">Outro (especificar)</option>`;
 }
 function checkOutroEquip(){ const sel=$('#res-equip'), og=$('#res-outro-equip-group'); if(og) og.style.display=sel?.value==='outro'?'':'none'; }
+
+function toggleTodasAulas(cb) {
+  const cbs = $$('.aula-cb');
+  cbs.forEach(c => { c.checked = cb.checked; });
+  atualizarEstiloAulas();
+}
+
+function sincronizarAulas() {
+  const cbs = $$('.aula-cb');
+  const todas = document.getElementById('aula-todas');
+  if (todas) todas.checked = cbs.every(c => c.checked);
+  atualizarEstiloAulas();
+}
+
+function atualizarEstiloAulas() {
+  $$('.aula-check').forEach(lbl => {
+    const cb = lbl.querySelector('input[type="checkbox"]');
+    if (cb) lbl.classList.toggle('checked', cb.checked);
+  });
+}
+
+function toggleHorarioManual(cb) {
+  const wrap = document.getElementById('horario-manual-wrap');
+  if (wrap) wrap.style.display = cb.checked ? 'flex' : 'none';
+}
+
+function getAulasSelecionadas() {
+  const selecionadas = [];
+  $$('.aula-cb').forEach(cb => { if (cb.checked) selecionadas.push(cb.value); });
+  return selecionadas;
+}
+
+function getHorarioDasAulas(aulas) {
+  if (!aulas || !aulas.length) return { inicio: '', fim: '' };
+  const ordered = AULAS.filter(a => aulas.includes(a.id));
+  if (!ordered.length) return { inicio: '', fim: '' };
+  return { inicio: ordered[0].inicio, fim: ordered[ordered.length - 1].fim };
+}
+
+function getLabelAulas(aulas) {
+  if (!aulas || !aulas.length) return '';
+  if (aulas.length === AULAS.length) return 'Todas as Aulas';
+  return AULAS.filter(a => aulas.includes(a.id)).map(a => a.label).join(', ');
+}
 function toggleOutroSala(sel){ const g=$('#res-outro-sala-group'); if(g) g.style.display=sel.value==='Outro'?'':'none'; }
 function changeQty(d){ const i=$('#res-qtd'); if(i) i.value=Math.max(1,Math.min(99,parseInt(i.value)+d)); }
 function editReserva(id){ openModalReserva(id); }
@@ -2249,15 +2335,26 @@ function salvarReserva(id) {
   }
   const cargo=$('#res-cargo')?.value, nome=$('#res-nome')?.value.trim();
   const salaVal=$('#res-sala')?.value, sala=salaVal==='Outro'?($('#res-outro-sala')?.value||'').trim():salaVal;
-  const data=$('#res-data')?.value, hinicio=$('#res-hinicio')?.value, hfim=$('#res-hfim')?.value;
+  const data=$('#res-data')?.value;
+  const aulasSel = getAulasSelecionadas();
+  const horarioManual = document.getElementById('toggle-horario-manual')?.checked;
+  let hinicio = '', hfim = '';
+  if (horarioManual) {
+    hinicio = $('#res-hinicio')?.value || '';
+    hfim    = $('#res-hfim')?.value   || '';
+  } else if (aulasSel.length) {
+    const h = getHorarioDasAulas(aulasSel);
+    hinicio = h.inicio; hfim = h.fim;
+  }
   const qtd=parseInt($('#res-qtd')?.value)||1, obs=$('#res-obs')?.value||'', unidade=$('#res-unidade')?.value||'Matriz';
-  if(!tipo||!equipNome||!cargo||!nome||!sala||!data||!hinicio||!hfim){ toast('Preencha todos os campos obrigatórios.','error'); return; }
-  if(id){ const r=STATE.reservas.find(r=>r.id===id); if(r){ Object.assign(r,{equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade}); fbSave('reservas',r.id,r); } toast('Reserva atualizada!'); }
+  if(!tipo||!equipNome||!cargo||!nome||!sala||!data){ toast('Preencha todos os campos obrigatórios.','error'); return; }
+  if(!aulasSel.length && !hinicio){ toast('Selecione pelo menos uma aula ou defina um horário.','error'); return; }
+  if(id){ const r=STATE.reservas.find(r=>r.id===id); if(r){ Object.assign(r,{equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,aulas:aulasSel,quantidade:qtd,obs,unidade}); fbSave('reservas',r.id,r); } toast('Reserva atualizada!'); }
   else {
     const recorrencia = $('#res-recorrencia')?.value || '';
     const datas = gerarDatasRecorrentes(data, recorrencia);
     for (const dt of datas) {
-      const nr={id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:dt,horaInicio:hinicio,horaFim:hfim,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow(),recorrencia:recorrencia||null};
+      const nr={id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:dt,horaInicio:hinicio,horaFim:hfim,aulas:aulasSel,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow(),recorrencia:recorrencia||null};
       STATE.reservas.push(nr); fbSave('reservas',nr.id,nr);
     }
     addNotification('Nova reserva criada',`${nome} reservou ${equipNome}${datas.length>1?' ('+datas.length+'x)':''}`, 'ti-calendar-plus');
@@ -3234,6 +3331,9 @@ Object.assign(window, {
   openModalReservaData,
   // Unidades
   renderUnidadeCharts, filtrarResAtivas,
+  // Aulas
+  toggleTodasAulas, sincronizarAulas, atualizarEstiloAulas, toggleHorarioManual,
+  getAulasSelecionadas, getHorarioDasAulas, getLabelAulas,
   // Melhorias v7.3
   abrirQRCode, imprimirQR,
   exportarCSV, exportarReservas, exportarChamados, exportarInventario, exportarLicencas, exportarEquipamentos,
