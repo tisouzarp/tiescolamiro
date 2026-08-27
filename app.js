@@ -517,7 +517,7 @@ function renderPage(page) {
 function attachPageEvents(page) {
   if (page==='dashboard') setTimeout(()=>{ renderChartStatus(); renderChartCat(); renderChartTendencia(); }, 100);
   if (page==='reservas') attachTableFilter('search-reserva', 'filter-reserva-status', 'reservas-tbody', ()=>renderReservasRows(getFilteredReservas()));
-  if (page==='chamados') attachTableFilter('search-chamado', 'filter-chamado-status', 'chamados-tbody', ()=>renderChamadosRows(getFilteredChamados()));
+  if (page==='chamados') attachChamadoFilters();
   if (page==='usuarios') attachTableFilter('search-user', 'filter-user-status', 'users-tbody', ()=>renderUserRows(STATE.users));
   if (page==='equipamentos') attachEquipFilter();
   if (page==='inventario') attachInvFilter();
@@ -529,6 +529,29 @@ function attachPageEvents(page) {
   if (page==='em-equipamentos') attachUnidadeEquipFilter('Ensino Médio');
   if (page==='mz-relatorios') setTimeout(()=>renderUnidadeCharts('Matriz'),200);
   if (page==='em-relatorios') setTimeout(()=>renderUnidadeCharts('Ensino Médio'),200);
+}
+
+function attachChamadoFilters() {
+  const search  = $('#search-chamado');
+  const fStatus = $('#filter-chamado-status');
+  const fPrio   = $('#filter-chamado-prio');
+  const tbody   = $('#chamados-tbody');
+
+  // Restaurar filtros salvos
+  if (search  && STATE.filtros.chamadoSearch) search.value  = STATE.filtros.chamadoSearch;
+  if (fStatus && STATE.filtros.chamado)       fStatus.value = STATE.filtros.chamado;
+  if (fPrio   && STATE.filtros.chamadoPrio)   fPrio.value   = STATE.filtros.chamadoPrio;
+
+  const refresh = () => {
+    if (tbody) tbody.innerHTML = renderChamadosRows(getFilteredChamados());
+  };
+
+  // Aplicar filtro atual imediatamente (restauração)
+  refresh();
+
+  if (search)  search.addEventListener('input',  () => { STATE.filtros.chamadoSearch = search.value;  refresh(); });
+  if (fStatus) fStatus.addEventListener('change', () => { STATE.filtros.chamado       = fStatus.value; refresh(); });
+  if (fPrio)   fPrio.addEventListener('change',   () => { STATE.filtros.chamadoPrio   = fPrio.value;   refresh(); });
 }
 
 function attachTableFilter(searchId, filterId, tbodyId, getFn) {
@@ -950,16 +973,17 @@ function renderReservasRows(list) {
 
 // ===== CHAMADOS =====
 function getFilteredChamados() {
-  const q=($('#search-chamado')?.value||'').toLowerCase();
-  const st=$('#filter-chamado-status')?.value||'';
-  const prio=$('#filter-chamado-prio')?.value||'';
-  // Se nenhum filtro de status selecionado, exclui fechado/cancelado (visão padrão)
-  // Se status específico selecionado (mesmo fechado), mostra todos que baterem
-  return STATE.chamados.filter(c=>{
-    if(!st && (c.status==='fechado'||c.status==='cancelado')) return false;
-    if(st && c.status!==st) return false;
-    if(prio && c.prioridade!==prio) return false;
-    if(q && !c.titulo.toLowerCase().includes(q) && !c.solicitante.toLowerCase().includes(q)) return false;
+  // Lê dos elementos OU dos filtros salvos no STATE
+  const q    = ($('#search-chamado')?.value  ?? STATE.filtros.chamadoSearch ?? '').toLowerCase();
+  const st   = $('#filter-chamado-status')?.value ?? STATE.filtros.chamado   ?? '';
+  const prio = $('#filter-chamado-prio')?.value   ?? STATE.filtros.chamadoPrio ?? '';
+
+  return STATE.chamados.filter(c => {
+    // Sem filtro de status: esconde fechados/cancelados por padrão
+    if (!st && (c.status === 'fechado' || c.status === 'cancelado')) return false;
+    if (st   && c.status    !== st)   return false;
+    if (prio && c.prioridade !== prio) return false;
+    if (q    && !c.titulo.toLowerCase().includes(q) && !c.solicitante.toLowerCase().includes(q)) return false;
     return true;
   });
 }
@@ -2409,7 +2433,7 @@ function openModalChamado(chamadoId=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Categoria</label>
-          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Canvas', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Office', 'Rede', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
+          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Canvas', 'Computador Sala', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Notebook', 'Office', 'Office 365', 'Rede', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'iPad', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
         </div>
         <div class="form-group">
           <label class="required">Prioridade</label>
