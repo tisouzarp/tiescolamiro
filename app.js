@@ -209,6 +209,15 @@ const STATE = {
   sla: { Alta: 2, Media: 8, Baixa: 24 }, // horas de SLA por prioridade
 };
 
+
+function sortByDate(list, campo='dataInicio', asc=true) {
+  return [...list].sort((a,b) => {
+    const da = a[campo] || '';
+    const db = b[campo] || '';
+    return asc ? da.localeCompare(db) : db.localeCompare(da);
+  });
+}
+
 function dateNow() { return new Date().toISOString().split('T')[0]; }
 function formatDate(d) { if (!d || d === '9999-12-31') return d === '9999-12-31' ? 'Perpétua' : '-'; const [y,m,day] = d.split('-'); return `${day}/${m}/${y}`; }
 function initials(nome) { return nome.split(' ').slice(0,2).map(n=>n[0]).join('').toUpperCase(); }
@@ -943,6 +952,7 @@ function reservas() {
 }
 
 function renderReservasRows(list) {
+  list = sortByDate(list);
   if (!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva encontrada</h3></div></td></tr>`;
   return list.map(r=>`
   <tr>
@@ -1091,7 +1101,7 @@ function inventario() {
   </div>
   <div class="card">
     <div class="card-header"><span class="card-title"><i class="ti ti-server"></i> Inventário Completo (${STATE.inventario.length} itens)</span></div>
-    <div class="table-wrapper"><table><thead><tr><th>Nome</th><th>Categoria</th><th>Marca/Modelo</th><th>Patrimônio</th><th>Nº Série</th><th>IP</th><th>Local</th><th>Unidade</th><th>Garantia</th><th>Status</th><th>Ações</th></tr></thead>
+    <div class="rel-table-wrap"><table class="table-compact"><thead><tr><th>Nome</th><th>Categoria</th><th>Marca / Modelo</th><th>Patrimônio</th><th>IP / Série</th><th>Local</th><th>Unidade</th><th>Garantia</th><th>Status</th><th>Ações</th></tr></thead>
     <tbody id="inv-tbody">${renderInvRows(STATE.inventario)}</tbody></table></div>
   </div>`;
 }
@@ -1099,25 +1109,22 @@ function inventario() {
 function invIcon(c){ const m={Rede:'network',Impressora:'printer',Computador:'desktop',Notebook:'device-laptop',Monitor:'device-desktop',Servidor:'server',Câmera:'camera',NoBreak:'plug','Access Point':'wifi',Telefone:'phone'}; return m[c]||'device-floppy'; }
 
 function renderInvRows(list) {
-  if(!list.length) return `<tr><td colspan="11"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item no inventário</h3></div></td></tr>`;
+  if(!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item no inventário</h3></div></td></tr>`;
   return list.map(i=>`
   <tr>
-    <td><strong>${i.nome}</strong>${i.obs?`<br><span class="text-muted">${i.obs}</span>`:''}</td>
-    <td><span class="badge badge-reservado">${i.categoria}</span></td>
-    <td>${i.marca} ${i.modelo}</td>
-    <td><code style="background:var(--gray-100);padding:2px 6px;border-radius:4px;font-size:11px">${i.patrimonio}</code></td>
-    <td><span class="text-muted" style="font-size:11px">${i.serie||'—'}</span></td>
-    <td><code style="font-size:11px">${i.ip||'—'}</code></td>
-    <td>${i.local}</td>
-    <td>${i.unidade}</td>
-    <td><span style="color:${diasParaVencer(i.garantia)<90?'var(--warning)':'inherit'}">${formatDate(i.garantia)}</span></td>
-    <td><span class="badge badge-${i.status==='ativo'?'fechado':'suspenso'}">${i.status}</span></td>
-    <td>
-      <div style="display:flex;gap:4px">
-        <button class="btn-icon" onclick="editInventario(${i.id})" title="Editar"><i class="ti ti-edit"></i></button>
-        <button class="btn-icon" onclick="deleteInventario(${i.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
-      </div>
-    </td>
+    <td><strong style="font-size:12px">${i.nome}</strong>${i.obs?`<br><span class="text-muted" style="font-size:10px">${i.obs}</span>`:''}</td>
+    <td><span class="badge badge-reservado" style="font-size:10px">${i.categoria}</span></td>
+    <td style="font-size:12px">${i.marca||''} ${i.modelo||''}</td>
+    <td><code style="background:var(--gray-100);padding:2px 5px;border-radius:4px;font-size:10px">${i.patrimonio}</code></td>
+    <td style="font-size:10px;color:var(--gray-500)"><code style="display:block">${i.ip||'—'}</code><span>${i.serie||'—'}</span></td>
+    <td style="font-size:11px">${i.local||'—'}</td>
+    <td style="font-size:11px">${i.unidade}</td>
+    <td><span style="font-size:11px;color:${diasParaVencer(i.garantia)<90?'var(--warning)':'inherit'}">${formatDate(i.garantia)||'—'}</span></td>
+    <td><span class="badge badge-${i.status==='ativo'?'fechado':'suspenso'}" style="font-size:10px">${i.status}</span></td>
+    <td><div style="display:flex;gap:2px">
+      <button class="btn-icon" onclick="editInventario(${i.id})" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-icon" onclick="deleteInventario(${i.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+    </div></td>
   </tr>`).join('');
 }
 
@@ -1351,6 +1358,7 @@ function reservasAtivasPage() {
 }
 
 function renderResAtivas(list) {
+  list = sortByDate(list);
   if(!list.length) return `<tr><td colspan="12"><div class="empty-state"><i class="ti ti-calendar-check"></i><h3>Nenhuma reserva aberta</h3><p>Todas as reservas foram fechadas!</p></div></td></tr>`;
   return list.map(r=>`
   <tr>
@@ -1375,7 +1383,7 @@ function renderResAtivas(list) {
 function filtrarResAtivas(q) {
   const search=(typeof q==='string'?q:($('#search-res-ativas')?.value||'')).toLowerCase();
   const uni=$('#filter-res-ativas-uni')?.value||'';
-  const list=STATE.reservas.filter(r=>r.status==='ativo'&&(!search||r.equipamento.toLowerCase().includes(search)||r.solicitante.toLowerCase().includes(search)||r.sala.toLowerCase().includes(search))&&(!uni||(r.unidade||'Matriz')===uni));
+  const list=sortByDate(STATE.reservas.filter(r=>r.status==='ativo'&&(!search||r.equipamento.toLowerCase().includes(search)||r.solicitante.toLowerCase().includes(search)||r.sala.toLowerCase().includes(search))&&(!uni||(r.unidade||'Matriz')===uni)));
   const tb=$('#tbody-res-ativas'); if(tb) tb.innerHTML=renderResAtivas(list);
 }
 
@@ -1412,6 +1420,7 @@ function relatorios() {
     <div id="rel-tipo-wrap" style="display:none;align-items:center;gap:8px">
       <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Relatório:</label>
       <select class="filter-select" id="rel-tipo" onchange="switchRelatorio(this.value)" style="font-weight:700;color:var(--primary)">
+        <option value="geral">Geral (Chamados + Reservas)</option>
         <option value="chamados">Chamados</option>
         <option value="reservas">Reservas</option>
         <option value="inventario">Inventário TI</option>
@@ -1446,7 +1455,7 @@ function relatorios() {
     <div style="position:relative" id="export-wrap">
       <button class="btn btn-ghost" onclick="toggleExportMenu()"><i class="ti ti-download"></i> Exportar Excel</button>
       <div id="export-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:white;border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);z-index:200;min-width:180px;overflow:hidden">
-        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarReservas();document.getElementById('export-menu').style.display='none'"><i class="ti ti-calendar-event"></i> Reservas</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700);font-weight:700" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarGeral();document.getElementById('export-menu').style.display='none'"><i class="ti ti-layout-list"></i> Geral (Tudo)</button><button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarReservas();document.getElementById('export-menu').style.display='none'"><i class="ti ti-calendar-event"></i> Reservas</button>
         <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarChamados();document.getElementById('export-menu').style.display='none'"><i class="ti ti-headset"></i> Chamados</button>
         <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarInventario();document.getElementById('export-menu').style.display='none'"><i class="ti ti-server"></i> Inventário</button>
         <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarLicencas();document.getElementById('export-menu').style.display='none'"><i class="ti ti-license"></i> Licenças</button>
@@ -1575,7 +1584,7 @@ function renderRelGraficos() {
 // ============================================================
 function renderRelDados(tipo) {
   tipo = tipo || document.getElementById('rel-tipo')?.value || 'chamados';
-  const map = { chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas, equipamentos: renderRelEquipamentos };
+  const map = { geral: renderRelGeral2, chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas, equipamentos: renderRelEquipamentos };
   return map[tipo] ? map[tipo]() : '';
 }
 
@@ -1660,6 +1669,96 @@ function relPrintFooter() {
 // ============================================================
 // RELATÓRIO: CHAMADOS
 // ============================================================
+
+// ============================================================
+// RELATÓRIO GERAL (dados): Chamados + Reservas combinados
+// ============================================================
+function renderRelGeral2() {
+  const f = getRelFiltros();
+  let chamados = STATE.chamados;
+  let reservas = sortByDate(STATE.reservas);
+  if (f.uni) { chamados = chamados.filter(c=>(c.unidade||'Matriz')===f.uni); reservas = reservas.filter(r=>(r.unidade||'Matriz')===f.uni); }
+  if (f.de)  { chamados = chamados.filter(c=>c.criado>=f.de); reservas = reservas.filter(r=>r.dataInicio>=f.de); }
+  if (f.ate) { chamados = chamados.filter(c=>c.criado<=f.ate); reservas = reservas.filter(r=>r.dataInicio<=f.ate); }
+  const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  return `
+  ${relPrintHeader('Relatório Geral — Chamados & Reservas')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
+    ${f.de||f.ate?`<span class="rel-filter-tag">${f.de?formatDate(f.de):''} ${f.ate?'até '+formatDate(f.ate):''}</span>`:''}
+  </div>
+
+  <div class="rel-kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${chamados.length}</div><div class="rel-kpi-label">Total Chamados</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${chamados.filter(c=>c.status==='aberto').length}</div><div class="rel-kpi-label">Chamados Abertos</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${reservas.length}</div><div class="rel-kpi-label">Total Reservas</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${reservas.filter(r=>r.status==='ativo').length}</div><div class="rel-kpi-label">Reservas Ativas</div></div>
+  </div>
+
+  <!-- CHAMADOS -->
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white"><i class="ti ti-headset"></i> Chamados (${chamados.length})</span>
+    </div>
+    <div class="rel-table-wrap">
+      <table class="rel-table">
+        <thead><tr>
+          <th style="width:45px">#</th><th>Título</th><th>Categoria</th>
+          <th>Prioridade</th><th>Solicitante</th><th>Unidade</th>
+          <th>Status</th><th>Aberto em</th>
+        </tr></thead>
+        <tbody>
+          ${chamados.length===0?'<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--gray-400)">Nenhum chamado</td></tr>':
+            chamados.map((c,i)=>`<tr class="${i%2===1?'rel-row-alt':''}">
+              <td><strong style="color:var(--primary)">#${c.id}</strong></td>
+              <td><strong>${c.titulo}</strong></td>
+              <td>${c.categoria}</td>
+              <td><span class="rel-prio rel-prio-${c.prioridade.toLowerCase()}">${c.prioridade}</span></td>
+              <td>${c.solicitante}</td>
+              <td>${c.unidade||'Matriz'}</td>
+              <td><span class="badge badge-${c.status}">${c.status}</span></td>
+              <td style="white-space:nowrap">${formatDate(c.criado)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- RESERVAS -->
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white"><i class="ti ti-calendar-event"></i> Reservas (${reservas.length}) — ordenadas por data</span>
+    </div>
+    <div class="rel-table-wrap">
+      <table class="rel-table">
+        <thead><tr>
+          <th>#</th><th>Equipamento</th><th>Solicitante</th><th>Cargo</th>
+          <th>Sala</th><th>Data</th><th>Período</th><th>Qtd</th>
+          <th>Unidade</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          ${reservas.length===0?'<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--gray-400)">Nenhuma reserva</td></tr>':
+            reservas.map((r,i)=>`<tr class="${i%2===1?'rel-row-alt':''}">
+              <td><strong style="color:var(--primary)">#${r.id}</strong></td>
+              <td><strong>${r.equipamento}</strong></td>
+              <td>${r.solicitante}</td>
+              <td style="font-size:11px">${r.cargo}</td>
+              <td><strong>${r.sala}</strong></td>
+              <td style="white-space:nowrap"><strong>${formatDate(r.dataInicio)}</strong></td>
+              <td style="font-size:11px">${r.aulas&&r.aulas.length?getLabelAulas(r.aulas):r.horaInicio?`${r.horaInicio}–${r.horaFim}`:'—'}</td>
+              <td style="text-align:center">${r.quantidade||1}</td>
+              <td>${r.unidade||'Matriz'}</td>
+              <td><span class="badge badge-${r.status}">${r.status}</span></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ${relPrintFooter()}`;
+}
+
 function renderRelChamados() {
   const f = getRelFiltros();
   let list = STATE.chamados;
@@ -3041,7 +3140,12 @@ function toggleExportMenu() {
   }
 }
 
-function exportarReservas() { exportarCSV(STATE.reservas, 'reservas-miro'); }
+function exportarGeral() {
+  const chamados = STATE.chamados.map(c=>({tipo:'Chamado', id:c.id, titulo:c.titulo, categoria:c.categoria, prioridade:c.prioridade, solicitante:c.solicitante, unidade:c.unidade||'Matriz', status:c.status, data:c.criado}));
+  const reservas = sortByDate(STATE.reservas).map(r=>({tipo:'Reserva', id:r.id, titulo:r.equipamento, categoria:r.equipamentoTipo, prioridade:'—', solicitante:r.solicitante, unidade:r.unidade||'Matriz', status:r.status, data:r.dataInicio}));
+  exportarCSV([...chamados, ...reservas], 'geral-miro');
+}
+function exportarReservas() { exportarCSV(sortByDate(STATE.reservas), 'reservas-miro'); }
 function exportarChamados() { exportarCSV(STATE.chamados, 'chamados-miro'); }
 function exportarInventario() { exportarCSV(STATE.inventario, 'inventario-miro'); }
 function exportarLicencas() { exportarCSV(STATE.licencas, 'licencas-miro'); }
@@ -3363,7 +3467,7 @@ Object.assign(window, {
   getAulasSelecionadas, getHorarioDasAulas, getLabelAulas,
   // Melhorias v7.3
   abrirQRCode, imprimirQR,
-  exportarCSV, exportarReservas, exportarChamados, exportarInventario, exportarLicencas, exportarEquipamentos,
+  exportarCSV, exportarGeral, exportarReservas, exportarChamados, exportarInventario, exportarLicencas, exportarEquipamentos,
   toggleExportMenu,
   configuracoes, salvarSLA, alterarSenha,
   renderChartTendencia,

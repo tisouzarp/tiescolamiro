@@ -1878,3 +1878,200 @@ tbody td strong {
   border-color: var(--primary);
   border-style: solid;
 }
+
+/* ===== TABELAS RESPONSIVAS SEM SCROLL ===== */
+.rel-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tabelas dentro de cards — colunas se adaptam */
+.rel-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: auto;
+}
+
+.rel-table th,
+.rel-table td {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 60px;
+}
+
+/* Colunas que podem ser pequenas */
+.rel-table th:first-child,
+.rel-table td:first-child {
+  min-width: 40px;
+  width: 40px;
+}
+
+/* Garantir que page-content não crie scroll */
+.page-content {
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* Cards não vazam */
+.card {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* ===== PRINT — MOSTRAR CONTEÚDO CORRETAMENTE ===== */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: white !important;
+  }
+
+  /* Esconder tudo exceto o conteúdo de relatório */
+  .sidebar,
+  .main-header,
+  .main-footer,
+  .no-print,
+  .rel-toolbar,
+  .filter-bar,
+  .report-filters,
+  #page-title {
+    display: none !important;
+  }
+
+  /* Conteúdo ocupa tela toda */
+  .main-content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+
+  .page-content {
+    padding: 16px !important;
+    overflow: visible !important;
+  }
+
+  /* Mostrar cabeçalho de impressão */
+  .rel-print-header {
+    display: flex !important;
+    background: #0073c8 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    margin-bottom: 16px;
+  }
+
+  .rel-print-header h1,
+  .rel-print-header h2,
+  .rel-print-header p {
+    color: white !important;
+  }
+
+  /* Cards impressão */
+  .card {
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+    margin-bottom: 12px !important;
+    overflow: visible !important;
+  }
+
+  .card-header {
+    background: #f5f5f5 !important;
+    border-bottom: 1px solid #ddd !important;
+    padding: 10px 14px !important;
+  }
+
+  /* KPIs impressão */
+  .rel-kpi {
+    border: 1px solid #ccc !important;
+    padding: 10px 12px !important;
+  }
+
+  .rel-kpi.blue   { background: #e8f3fd !important; }
+  .rel-kpi.green  { background: #eafaf1 !important; }
+  .rel-kpi.red    { background: #fdedec !important; }
+  .rel-kpi.orange { background: #fef5e7 !important; }
+  .rel-kpi.teal   { background: #e0f7f7 !important; }
+  .rel-kpi.purple { background: #f3e5f5 !important; }
+  .rel-kpi.gray   { background: #f8f9fa !important; }
+
+  /* Tabelas impressão */
+  .rel-table-wrap,
+  .table-wrapper {
+    overflow: visible !important;
+  }
+
+  .rel-table,
+  table {
+    width: 100% !important;
+    font-size: 9pt !important;
+    border-collapse: collapse !important;
+  }
+
+  .rel-table thead th,
+  thead th {
+    background: #334155 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    padding: 6px 8px !important;
+    font-size: 8pt !important;
+  }
+
+  .rel-table tbody td,
+  tbody td {
+    padding: 5px 8px !important;
+    border-bottom: 1px solid #eee !important;
+  }
+
+  .rel-row-alt {
+    background: #f9f9f9 !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  /* Badges impressão */
+  .badge {
+    border: 1px solid #999 !important;
+    padding: 1px 5px !important;
+    font-size: 8pt !important;
+  }
+
+  /* Gráficos — altura menor para caber na impressão */
+  .chart-container {
+    height: 160px !important;
+  }
+
+  .grid-2 {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+    page-break-inside: avoid;
+  }
+
+  .rel-kpi-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  /* Rodapé impressão */
+  .rel-print-footer {
+    display: block !important;
+    border-top: 2px solid #ccc !important;
+    padding-top: 10px !important;
+    margin-top: 16px !important;
+    font-size: 9pt !important;
+    color: #333 !important;
+    text-align: center;
+  }
+
+  /* Ocultar botões e ações */
+  .btn, .btn-icon, .actions-menu, .actions-dropdown {
+    display: none !important;
+  }
+}
