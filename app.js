@@ -62,7 +62,7 @@ async function fbLoadAll() {
   if (!DB_READY) return false;
   try {
     const { collection, getDocs } = window.FB_FUNS;
-    const colecoes = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos'];
+    const colecoes = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','compras'];
     for (const col of colecoes) {
       const snap = await getDocs(collection(db, col));
       if (!snap.empty) {
@@ -74,6 +74,8 @@ async function fbLoadAll() {
         if (col === 'inventario')      STATE.inventario      = dados;
         if (col === 'licencas')        STATE.licencas        = dados;
         if (col === 'acompanhamentos') STATE.acompanhamentos = dados;
+        if (col === 'compras')        STATE.compras        = dados;
+        if (col === 'compras')        STATE.compras        = dados;
       }
     }
     // Carregar config (nextId etc)
@@ -203,8 +205,10 @@ const STATE = {
     { id: 2, nome: 'Adobe Creative Cloud', fornecedor: 'Adobe', tipo: 'Desktop', quantidade: 5, chave: 'ADOBE-XXXXX', dataCompra: '2024-03-01', vencimento: '2025-06-15', valor: 1800.00, status: 'vencendo', unidade: 'Matriz', obs: 'Laboratório de artes' },
     { id: 3, nome: 'Windows 11 Pro', fornecedor: 'Microsoft', tipo: 'OEM', quantidade: 20, chave: 'WIN11-XXXXX', dataCompra: '2023-06-01', vencimento: '9999-12-31', valor: 8000.00, status: 'ativo', unidade: 'Ensino Médio', obs: 'Licenças perpétuas' },
   ],
-  nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1 },
+  nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1, compra: 1 },
+  compras: [],
   acompanhamentos: [], // { id, chamadoId, texto, autor, tipo, criado }
+  compras: [], // { id, descricao, categoria, fornecedor, dataCompra, nfNumero, valorTotal, solicitante, setor, unidade, itens, addInventario, status, obs }
   filtros: { reserva: '', chamado: '', chamadoPrio: '', reservaSearch: '', chamadoSearch: '' },
   sla: { Alta: 2, Media: 8, Baixa: 24 }, // horas de SLA por prioridade
 };
@@ -256,7 +260,7 @@ function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
 // ===== PERSISTENCE =====
 function saveState() {
   try {
-    localStorage.setItem('miro_ti_v2', JSON.stringify({ reservas:STATE.reservas, chamados:STATE.chamados, equipamentos:STATE.equipamentos, users:STATE.users, inventario:STATE.inventario, licencas:STATE.licencas, nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30), acompanhamentos:STATE.acompanhamentos }));
+    localStorage.setItem('miro_ti_v2', JSON.stringify({ reservas:STATE.reservas, chamados:STATE.chamados, equipamentos:STATE.equipamentos, users:STATE.users, inventario:STATE.inventario, licencas:STATE.licencas, nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30), acompanhamentos:STATE.acompanhamentos, compras:STATE.compras }));
     if (STATE.currentUser) localStorage.setItem('miro_ti_session', JSON.stringify({ userId: STATE.currentUser.id, page: STATE.currentPage }));
     else localStorage.removeItem('miro_ti_session');
   } catch(e) {}
@@ -264,7 +268,7 @@ function saveState() {
 function loadState() {
   try {
     const s = localStorage.getItem('miro_ti_v2');
-    if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications','acompanhamentos'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
+    if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications','acompanhamentos','compras'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
     const sess = localStorage.getItem('miro_ti_session');
     if (sess) {
       const { userId, page } = JSON.parse(sess);
@@ -433,7 +437,9 @@ function renderLayout() {
         <span class="nav-section-title">Administração</span>
         <button class="nav-item ${STATE.currentPage==='equipamentos'?'active':''}" data-page="equipamentos"><i class="ti ti-devices"></i> Equipamentos</button>
         <button class="nav-item ${STATE.currentPage==='usuarios'?'active':''}" data-page="usuarios"><i class="ti ti-users"></i> Usuários</button>
+        <button class="nav-item ${STATE.currentPage==='compras'?'active':''}" data-page="compras"><i class="ti ti-shopping-cart"></i> Compras</button>
         <button class="nav-item ${STATE.currentPage==='relatorios'?'active':''}" data-page="relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
+        <button class="nav-item ${STATE.currentPage==='compras'?'active':''}" data-page="compras"><i class="ti ti-shopping-cart"></i> Compras TI</button>
         <button class="nav-item ${STATE.currentPage==='configuracoes'?'active':''}" data-page="configuracoes"><i class="ti ti-settings"></i> Configurações</button>
         ` : `
         <span class="nav-section-title">Menu</span>
@@ -486,6 +492,8 @@ function attachLayoutEvents() {
     else if (p==='mz-reservas'||p==='em-reservas') openModalReserva();
     else if (p==='mz-licencas'||p==='em-licencas') openModalLicenca();
     else if (p==='mz-usuarios'||p==='em-usuarios') openModalUsuario();
+    else if (p==='compras') openModalCompra();
+    else if (p==='compras') openModalCompra();
     else if (p==='usuarios') openModalUsuario();
     else openModalReserva();
   });
@@ -493,7 +501,7 @@ function attachLayoutEvents() {
 
 function navigateTo(page) {
   STATE.currentPage = page;
-  const titles = { dashboard:'Dashboard', calendario:'Calendário', reservas:'Reservas', chamados:'Chamados', arquivados:'Arquivados', inventario:'Inventário TI', licencas:'Licenças de Software', matriz:'Matriz — Visão Geral', ensinomedio:'Ensino Médio — Visão Geral', equipamentos:'Equipamentos', usuarios:'Usuários', relatorios:'Relatórios & Gráficos', novaReserva:'Nova Reserva', novoChamado:'Abrir Chamado', meuschamados:'Meus Chamados', 'mz-reservas':'Matriz — Reservas', 'mz-chamados':'Matriz — Chamados', 'mz-equipamentos':'Matriz — Equipamentos', 'mz-licencas':'Matriz — Licenças', 'mz-usuarios':'Matriz — Usuários', 'mz-relatorios':'Matriz — Relatórios', 'em-reservas':'Ensino Médio — Reservas', 'em-chamados':'Ensino Médio — Chamados', 'em-equipamentos':'Ensino Médio — Equipamentos', 'em-licencas':'Ensino Médio — Licenças', 'em-usuarios':'Ensino Médio — Usuários', 'em-relatorios':'Ensino Médio — Relatórios' };
+  const titles = { dashboard:'Dashboard', calendario:'Calendário', reservas:'Reservas', chamados:'Chamados', arquivados:'Arquivados', inventario:'Inventário TI', licencas:'Licenças de Software', matriz:'Matriz — Visão Geral', ensinomedio:'Ensino Médio — Visão Geral', equipamentos:'Equipamentos', usuarios:'Usuários', relatorios:'Relatórios & Gráficos', novaReserva:'Nova Reserva', novoChamado:'Abrir Chamado', meuschamados:'Meus Chamados', 'mz-reservas':'Matriz — Reservas', 'mz-chamados':'Matriz — Chamados', 'mz-equipamentos':'Matriz — Equipamentos', 'mz-licencas':'Matriz — Licenças', 'mz-usuarios':'Matriz — Usuários', 'mz-relatorios':'Matriz — Relatórios', 'em-reservas':'Ensino Médio — Reservas', 'em-chamados':'Ensino Médio — Chamados', 'em-equipamentos':'Ensino Médio — Equipamentos', 'em-licencas':'Ensino Médio — Licenças', 'em-usuarios':'Ensino Médio — Usuários', 'em-relatorios':'Ensino Médio — Relatórios', 'compras':'Compras de TI', 'reservas-ativas':'Reservas Abertas' };
   const titleEl = $('#page-title');
   if (titleEl) titleEl.textContent = titles[page] || page;
   $$('.nav-item[data-page]').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
@@ -517,6 +525,8 @@ function renderPage(page) {
     'em-usuarios': ()=>paginaUnidade('usuarios','Ensino Médio'),
     'em-relatorios': ()=>paginaUnidade('relatorios','Ensino Médio'),
     'reservas-ativas': reservasAtivasPage,
+    'compras': comprasPage,
+    'compras': comprasPage,
     'configuracoes': configuracoes,
   };
   content.innerHTML = pages[page] ? pages[page]() : '<p>Página não encontrada.</p>';
@@ -1028,7 +1038,7 @@ function renderChamadosRows(list) {
     <td>${c.atribuido||'<span class="text-muted">—</span>'}</td>
     <td>${c.unidade||'Matriz'}</td>
     <td><span class="badge badge-${c.status}">${c.status}</span></td>
-    <td>${formatDate(c.criado)}</td>
+    <td style="white-space:nowrap">${formatDate(c.criado)}${c.hora?`<br><span class="text-muted" style="font-size:10px">${c.hora}</span>`:''}</td>
     <td>
       <div class="actions-menu">
         <button class="btn-icon" onclick="toggleMenu(this)"><i class="ti ti-dots-vertical"></i></button>
@@ -2532,7 +2542,7 @@ function openModalChamado(chamadoId=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Categoria</label>
-          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Canvas', 'Computador Sala', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Notebook', 'Office', 'Office 365', 'Rede', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'iPad', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
+          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Canvas', 'Celular', 'Computador Sala', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Notebook', 'Nuvem', 'Office', 'Office 365', 'Rede', 'Reunião', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'iPad', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
         </div>
         <div class="form-group">
           <label class="required">Prioridade</label>
@@ -2550,6 +2560,16 @@ function openModalChamado(chamadoId=null) {
         <div class="form-group">
           <label>Unidade</label>
           <select id="ch-unidade"><option value="Matriz" ${!c||c.unidade==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${c?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Data do Chamado</label>
+          <input type="date" id="ch-data" value="${c?.criado||dateNow()}" style="max-width:200px"/>
+        </div>
+        <div class="form-group">
+          <label>Horário</label>
+          <input type="time" id="ch-hora" value="${c?.hora||new Date().toTimeString().slice(0,5)}" style="max-width:140px"/>
         </div>
       </div>
       ${STATE.currentUser.role==='admin'?`<div class="form-group"><label>Atribuir a (TI)</label><select id="ch-atrib"><option value="">Não atribuído</option>${STATE.users.filter(u=>u.role==='admin').map(u=>`<option value="${u.nome}" ${c?.atribuido===u.nome?'selected':''}>${u.nome}</option>`).join('')}</select></div>`:'<input type="hidden" id="ch-atrib" value="">'}
@@ -2575,9 +2595,11 @@ function salvarChamado(id) {
   const atrib=$('#ch-atrib')?.value ?? (chamadoAtual?.atribuido||'');
   const desc=($('#ch-desc')?.value||'').trim() || (chamadoAtual?.descricao||'');
   const unidade=$('#ch-unidade')?.value || (chamadoAtual?.unidade||'Matriz');
+  const dataCh=$('#ch-data')?.value || (chamadoAtual?.criado||dateNow());
+  const horaCh=$('#ch-hora')?.value || (chamadoAtual?.hora||'');
   if(!titulo||!cat||!prio||!sol||!desc){ toast('Preencha todos os campos obrigatórios.','error'); return; }
-  if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c){ Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,atualizado:dateNow()}); fbSave('chamados',c.id,c); } toast('Chamado atualizado!'); }
-  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,status:'aberto',criado:dateNow(),atualizado:dateNow()}; STATE.chamados.push(nc); fbSave('chamados',nc.id,nc); addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); }
+  if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c){ Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,criado:dataCh,hora:horaCh,atualizado:dateNow()}); fbSave('chamados',c.id,c); } toast('Chamado atualizado!'); }
+  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,status:'aberto',criado:dataCh,hora:horaCh,atualizado:dateNow()}; STATE.chamados.push(nc); fbSave('chamados',nc.id,nc); addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
 
@@ -3313,6 +3335,378 @@ function renderSLABadge(chamado) {
   </span>`;
 }
 
+
+// ===== COMPRAS =====
+const SETORES_COMPRA = ['TI', 'Secretaria', 'Coordenação', 'Direção', 'Biblioteca', 'Laboratório', 'Administrativo', 'Outro'];
+const CATS_COMPRA = ['Acessório', 'Cabo/Conectores', 'Caixa de Som', 'Computador', 'Consumível', 'Câmera', 'Impressora', 'Licença de Software', 'Microfone', 'Monitor', 'Móvel/Suporte', 'Notebook', 'Outro', 'Periférico', 'Rede (Switch/Roteador)', 'iPad/Tablet'];
+
+function comprasPage() {
+  const list = [...STATE.compras].sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
+  const totalGasto = list.reduce((a,c)=>a+(parseFloat(c.valorTotal)||0),0);
+  const mesAtual = dateNow().slice(0,7);
+  const gastoMes = list.filter(c=>(c.dataCompra||'').startsWith(mesAtual)).reduce((a,c)=>a+(parseFloat(c.valorTotal)||0),0);
+
+  return `
+  <div class="stats-grid" style="margin-bottom:20px">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-shopping-cart"></i></div><div class="stat-info"><div class="stat-number">${list.length}</div><div class="stat-label">Total de Compras</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-coin"></i></div><div class="stat-info"><div class="stat-number">R$ ${totalGasto.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="stat-label">Investimento Total</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-calendar-month"></i></div><div class="stat-info"><div class="stat-number">R$ ${gastoMes.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="stat-label">Gasto Este Mês</div></div></div>
+    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-package"></i></div><div class="stat-info"><div class="stat-number">${list.reduce((a,c)=>a+(c.itens?.length||0),0)}</div><div class="stat-label">Itens Comprados</div></div></div>
+  </div>
+
+  <div class="filter-bar no-print">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar compra..." id="search-compra" oninput="filtrarCompras()"/></div>
+    <select class="filter-select" id="filter-compra-uni" onchange="filtrarCompras()">
+      <option value="">Todas as unidades</option><option>Matriz</option><option>Ensino Médio</option>
+    </select>
+    <input type="month" class="filter-select" id="filter-compra-mes" onchange="filtrarCompras()" style="width:160px"/>
+    <button class="btn btn-primary" onclick="openModalCompra()"><i class="ti ti-plus"></i> Nova Compra</button>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white"><i class="ti ti-shopping-cart"></i> Compras de TI (${list.length})</span>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Descrição</th><th>Categoria</th><th>Fornecedor</th>
+          <th>Data</th><th>NF</th><th>Solicitante</th><th>Setor</th>
+          <th>Unidade</th><th>Itens</th><th>Valor Total</th><th>Inventário</th><th>Status</th><th>Ações</th>
+        </tr></thead>
+        <tbody id="compras-tbody">${renderComprasRows(list)}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderComprasRows(list) {
+  if (!list.length) return `<tr><td colspan="14"><div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div></td></tr>`;
+  return list.map((c,i) => `
+  <tr>
+    <td><strong style="color:var(--primary)">#${c.id}</strong></td>
+    <td><strong>${c.descricao}</strong><br><span class="text-muted" style="font-size:11px">${c.obs||''}</span></td>
+    <td><span class="badge badge-reservado" style="font-size:10px">${c.categoria||'—'}</span></td>
+    <td style="font-size:12px">${c.fornecedor||'—'}</td>
+    <td style="white-space:nowrap"><strong>${formatDate(c.dataCompra)}</strong></td>
+    <td style="font-size:11px;color:var(--gray-500)">${c.nfNumero||'—'}</td>
+    <td style="font-size:12px">${c.solicitante||'—'}</td>
+    <td style="font-size:11px">${c.setor||'—'}</td>
+    <td style="font-size:11px">${c.unidade||'Matriz'}</td>
+    <td style="text-align:center"><strong>${c.itens?.length||0}</strong></td>
+    <td style="white-space:nowrap"><strong style="color:var(--success)">R$ ${(parseFloat(c.valorTotal)||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong></td>
+    <td style="text-align:center">${c.addInventario?'<span class="badge badge-fechado" style="font-size:10px">✓ Sim</span>':'<span class="text-muted" style="font-size:11px">Não</span>'}</td>
+    <td><span class="badge badge-${c.status==='recebido'?'fechado':c.status==='aguardando'?'andamento':'reservado'}" style="font-size:10px">${c.status||'recebido'}</span></td>
+    <td>
+      <div class="actions-menu">
+        <button class="btn-icon" onclick="toggleMenu(this)"><i class="ti ti-dots-vertical"></i></button>
+        <div class="actions-dropdown" style="display:none">
+          <button onclick="verCompra(${c.id})"><i class="ti ti-eye"></i> Ver detalhes</button>
+          <button onclick="editCompra(${c.id})"><i class="ti ti-edit"></i> Editar</button>
+          <hr>
+          <button class="danger" onclick="deleteCompra(${c.id})"><i class="ti ti-trash"></i> Excluir</button>
+        </div>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+
+function filtrarCompras() {
+  const q = ($('#search-compra')?.value||'').toLowerCase();
+  const uni = $('#filter-compra-uni')?.value||'';
+  const mes = $('#filter-compra-mes')?.value||'';
+  const list = STATE.compras.filter(c =>
+    (!q || c.descricao.toLowerCase().includes(q) || (c.fornecedor||'').toLowerCase().includes(q)) &&
+    (!uni || (c.unidade||'Matriz')===uni) &&
+    (!mes || (c.dataCompra||'').startsWith(mes))
+  ).sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
+  const tb = $('#compras-tbody');
+  if (tb) tb.innerHTML = renderComprasRows(list);
+}
+
+function openModalCompra(compraId=null) {
+  const c = compraId ? STATE.compras.find(c=>c.id===compraId) : null;
+  openModal(`
+  <div class="modal modal-lg" style="max-width:720px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-shopping-cart" style="color:#60a5fa"></i> ${c?'Editar Compra':'Nova Compra de TI'}</span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+
+      <!-- INFORMAÇÕES GERAIS -->
+      <div style="background:var(--primary-light);border-radius:8px;padding:12px 16px;margin-bottom:16px;border-left:3px solid var(--primary)">
+        <p style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;margin-bottom:2px">Informações da Compra</p>
+      </div>
+
+      <div class="form-group">
+        <label class="required">Descrição / Título da Compra</label>
+        <input type="text" id="cp-desc" placeholder="Ex: Notebooks para laboratório de informática" value="${c?.descricao||''}"/>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Categoria</label>
+          <select id="cp-cat">
+            <option value="">Selecione...</option>
+            ${CATS_COMPRA.map(cat=>`<option ${c?.categoria===cat?'selected':''}>${cat}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="required">Unidade</label>
+          <select id="cp-unidade">
+            <option value="Matriz" ${!c||c.unidade==='Matriz'?'selected':''}>Matriz</option>
+            <option value="Ensino Médio" ${c?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Fornecedor</label>
+          <input type="text" id="cp-forn" placeholder="Nome da empresa fornecedora" value="${c?.fornecedor||''}"/>
+        </div>
+        <div class="form-group">
+          <label class="required">Data da Compra</label>
+          <input type="date" id="cp-data" value="${c?.dataCompra||dateNow()}"/>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Número da Nota Fiscal <span style="color:var(--gray-400);font-weight:400">(opcional)</span></label>
+          <input type="text" id="cp-nf" placeholder="Ex: NF-12345" value="${c?.nfNumero||''}"/>
+        </div>
+        <div class="form-group">
+          <label class="required">Status da Compra</label>
+          <select id="cp-status">
+            <option value="aguardando" ${c?.status==='aguardando'?'selected':''}>⏳ Aguardando entrega</option>
+            <option value="recebido"  ${!c||c?.status==='recebido'?'selected':''}>✅ Recebido</option>
+            <option value="parcial"   ${c?.status==='parcial'?'selected':''}>📦 Recebido parcialmente</option>
+            <option value="devolvido" ${c?.status==='devolvido'?'selected':''}>↩️ Devolvido</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Solicitante da Compra</label>
+          <div style="position:relative">
+            <input type="text" id="cp-sol" placeholder="Quem solicitou" value="${c?.solicitante||''}" autocomplete="off" oninput="showUserSuggest(this,'cp-sol-list')"/>
+            <div id="cp-sol-list" class="autocomplete-list" style="display:none"></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="required">Setor Destino</label>
+          <select id="cp-setor">
+            <option value="">Selecione...</option>
+            ${SETORES_COMPRA.map(s=>`<option ${c?.setor===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <!-- ITENS DA COMPRA -->
+      <div style="background:var(--gray-50);border-radius:8px;padding:12px 16px;margin:16px 0 8px;border-left:3px solid var(--warning)">
+        <p style="font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase;margin-bottom:2px">Itens Comprados</p>
+      </div>
+
+      <div id="cp-itens-wrap" style="margin-bottom:8px">
+        ${(c?.itens||[{nome:'',quantidade:1,valorUnit:0}]).map((it,idx)=>`
+        <div class="cp-item-row" id="cpitem-${idx}" style="display:grid;grid-template-columns:1fr 80px 110px 32px;gap:8px;margin-bottom:8px;align-items:center">
+          <input type="text" placeholder="Nome do item" value="${it.nome||''}" class="cp-item-nome" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>
+          <input type="number" placeholder="Qtd" value="${it.quantidade||1}" min="1" class="cp-item-qtd" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;text-align:center"/>
+          <input type="number" placeholder="R$ Unit." value="${it.valorUnit||''}" step="0.01" min="0" class="cp-item-valor" oninput="calcularTotalCompra()" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>
+          <button type="button" class="btn-icon" onclick="removerItemCompra(${idx})" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+        </div>`).join('')}
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="adicionarItemCompra()" style="margin-bottom:8px">
+        <i class="ti ti-plus"></i> Adicionar item
+      </button>
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:10px;background:var(--primary-light);border-radius:6px;margin-bottom:4px">
+        <span style="font-size:13px;color:var(--gray-600);font-weight:600">Valor Total:</span>
+        <span id="cp-total-display" style="font-size:18px;font-weight:800;color:var(--primary)">R$ 0,00</span>
+        <input type="hidden" id="cp-valor-total" value="${c?.valorTotal||0}"/>
+      </div>
+
+      <!-- OBSERVAÇÕES E INVENTÁRIO -->
+      <div class="form-group" style="margin-top:12px">
+        <label>Observações</label>
+        <textarea id="cp-obs" rows="2" placeholder="Informações adicionais, garantia, condições...">${c?.obs||''}</textarea>
+      </div>
+
+      <div style="padding:12px;background:var(--success-bg);border-radius:8px;border:1.5px solid #a7f3c0">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <input type="checkbox" id="cp-add-inv" ${!c||c.addInventario?'checked':''} style="width:18px;height:18px;accent-color:var(--success)">
+          <div>
+            <span style="font-size:13px;font-weight:700;color:var(--success)">Adicionar automaticamente ao Inventário TI</span>
+            <p style="font-size:11px;color:var(--gray-500);margin-top:1px">Os itens desta compra serão inseridos no inventário ao salvar</p>
+          </div>
+        </label>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarCompra(${compraId||'null'})">
+        <i class="ti ti-check"></i> ${c?'Salvar Alterações':'Registrar Compra'}
+      </button>
+    </div>
+  </div>`);
+
+  // Calcular total inicial ao abrir
+  setTimeout(calcularTotalCompra, 100);
+}
+
+function adicionarItemCompra() {
+  const wrap = document.getElementById('cp-itens-wrap');
+  if (!wrap) return;
+  const idx = wrap.children.length;
+  const div = document.createElement('div');
+  div.className = 'cp-item-row';
+  div.id = `cpitem-${idx}`;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 80px 110px 32px;gap:8px;margin-bottom:8px;align-items:center';
+  div.innerHTML = `
+    <input type="text" placeholder="Nome do item" class="cp-item-nome" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>
+    <input type="number" placeholder="Qtd" value="1" min="1" class="cp-item-qtd" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;text-align:center"/>
+    <input type="number" placeholder="R$ Unit." step="0.01" min="0" class="cp-item-valor" oninput="calcularTotalCompra()" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>
+    <button type="button" class="btn-icon" onclick="this.closest('.cp-item-row').remove();calcularTotalCompra()" style="color:var(--danger)"><i class="ti ti-trash"></i></button>`;
+  wrap.appendChild(div);
+}
+
+function removerItemCompra(idx) {
+  const el = document.getElementById(`cpitem-${idx}`);
+  if (el) { el.remove(); calcularTotalCompra(); }
+}
+
+function calcularTotalCompra() {
+  let total = 0;
+  $$('.cp-item-row').forEach(row => {
+    const qtd = parseFloat(row.querySelector('.cp-item-qtd')?.value) || 0;
+    const val = parseFloat(row.querySelector('.cp-item-valor')?.value) || 0;
+    total += qtd * val;
+  });
+  const disp = document.getElementById('cp-total-display');
+  const hidden = document.getElementById('cp-valor-total');
+  if (disp) disp.textContent = `R$ ${total.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+  if (hidden) hidden.value = total;
+}
+
+function salvarCompra(id) {
+  const desc     = $('#cp-desc')?.value.trim();
+  const cat      = $('#cp-cat')?.value;
+  const unidade  = $('#cp-unidade')?.value||'Matriz';
+  const forn     = $('#cp-forn')?.value.trim();
+  const data     = $('#cp-data')?.value;
+  const nf       = $('#cp-nf')?.value.trim();
+  const status   = $('#cp-status')?.value||'recebido';
+  const sol      = $('#cp-sol')?.value.trim();
+  const setor    = $('#cp-setor')?.value;
+  const obs      = $('#cp-obs')?.value.trim();
+  const addInv   = $('#cp-add-inv')?.checked;
+  const valorTotal = parseFloat($('#cp-valor-total')?.value)||0;
+
+  if (!desc||!cat||!forn||!data||!sol||!setor) { toast('Preencha todos os campos obrigatórios.','error'); return; }
+
+  // Capturar itens
+  const itens = [];
+  $$('.cp-item-row').forEach(row => {
+    const nome  = row.querySelector('.cp-item-nome')?.value.trim();
+    const qtd   = parseInt(row.querySelector('.cp-item-qtd')?.value)||1;
+    const valor = parseFloat(row.querySelector('.cp-item-valor')?.value)||0;
+    if (nome) itens.push({ nome, quantidade: qtd, valorUnit: valor });
+  });
+
+  const dados = { descricao:desc, categoria:cat, unidade, fornecedor:forn, dataCompra:data, nfNumero:nf, status, solicitante:sol, setor, obs, addInventario:addInv, valorTotal, itens };
+
+  if (id) {
+    const c = STATE.compras.find(c=>c.id===id);
+    if (c) { Object.assign(c, dados); fbSave('compras', c.id, c); }
+    toast('Compra atualizada!');
+  } else {
+    const nc = { id: STATE.nextId.compra++, ...dados, criado: dateNow() };
+    STATE.compras.push(nc);
+    fbSave('compras', nc.id, nc);
+
+    // Adicionar ao inventário se marcado
+    if (addInv && itens.length) {
+      itens.forEach(it => {
+        const ni = { id: STATE.nextId.inventario++, nome: it.nome, categoria: cat, tipo: cat, marca: forn, modelo: '', patrimonio: `CP-${nc.id}-${STATE.nextId.inventario}`, serie: '', ip: '', local: setor, unidade, garantia: '', status: 'ativo', obs: `Compra #${nc.id} - NF:${nf||'—'}`, quantidade: it.quantidade };
+        STATE.inventario.push(ni);
+        fbSave('inventario', ni.id, ni);
+      });
+      toast(`Compra registrada! ${itens.length} item(s) adicionado(s) ao Inventário.`);
+    } else {
+      toast('Compra registrada!');
+    }
+    addNotification('Nova compra registrada', `${desc} — R$ ${valorTotal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-shopping-cart');
+  }
+
+  closeModal();
+  saveState();
+  renderPage('compras');
+}
+
+function editCompra(id) { openModalCompra(id); }
+
+function deleteCompra(id) {
+  if (!confirm('Excluir esta compra?')) return;
+  fbDelete('compras', id);
+  STATE.compras = STATE.compras.filter(c=>c.id!==id);
+  saveState();
+  renderPage('compras');
+  toast('Compra excluída.','info');
+}
+
+function verCompra(id) {
+  const c = STATE.compras.find(c=>c.id===id);
+  if (!c) return;
+  openModal(`
+  <div class="modal modal-lg" style="max-width:600px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-shopping-cart" style="color:#60a5fa"></i> Compra #${c.id} — ${c.descricao}</span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        ${[['Categoria',c.categoria],['Unidade',c.unidade],['Fornecedor',c.fornecedor],['Data',formatDate(c.dataCompra)],['NF',c.nfNumero||'—'],['Status',c.status],['Solicitante',c.solicitante],['Setor',c.setor]].map(([k,v])=>`
+        <div style="padding:10px;background:var(--gray-50);border-radius:6px">
+          <p style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;margin-bottom:2px">${k}</p>
+          <p style="font-size:13px;font-weight:600;color:var(--gray-800)">${v||'—'}</p>
+        </div>`).join('')}
+      </div>
+      ${c.obs?`<div style="padding:10px;background:var(--warning-bg);border-radius:6px;margin-bottom:16px"><p style="font-size:11px;font-weight:700;color:var(--warning);margin-bottom:4px">OBSERVAÇÕES</p><p style="font-size:13px">${c.obs}</p></div>`:''}
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--gray-800);color:white">
+          <th style="padding:8px 12px;text-align:left;font-size:11px">Item</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px">Qtd</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px">Vlr Unit.</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px">Subtotal</th>
+        </tr></thead>
+        <tbody>
+          ${(c.itens||[]).map((it,i)=>`<tr style="background:${i%2?'#f8fafc':'white'}">
+            <td style="padding:8px 12px;font-size:13px">${it.nome}</td>
+            <td style="padding:8px 12px;text-align:center;font-weight:700">${it.quantidade}</td>
+            <td style="padding:8px 12px;text-align:right;font-size:12px">R$ ${(it.valorUnit||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+            <td style="padding:8px 12px;text-align:right;font-weight:700">R$ ${((it.valorUnit||0)*(it.quantidade||1)).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+          </tr>`).join('')}
+          <tr style="background:var(--primary-light);font-weight:800">
+            <td colspan="3" style="padding:10px 12px;font-size:13px;color:var(--primary)">TOTAL</td>
+            <td style="padding:10px 12px;text-align:right;font-size:16px;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:12px;padding:8px 12px;background:${c.addInventario?'var(--success-bg)':'var(--gray-100)'};border-radius:6px;font-size:12px;font-weight:600;color:${c.addInventario?'var(--success)':'var(--gray-500)'}">
+        <i class="ti ti-${c.addInventario?'circle-check':'circle-x'}"></i>
+        ${c.addInventario?'Itens adicionados ao Inventário TI':'Não adicionado ao inventário'}
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+      <button class="btn btn-primary" onclick="closeModal();editCompra(${c.id})"><i class="ti ti-edit"></i> Editar</button>
+    </div>
+  </div>`);
+}
+
 // ===== AUTOCOMPLETE USUÁRIOS =====
 function showUserSuggest(input, listId) {
   const val = input.value.toLowerCase();
@@ -3344,6 +3738,430 @@ function selectUser(nome, inputId, listId) {
   if (list)  list.style.display = 'none';
 }
 
+
+
+// ============================================================
+// MÓDULO DE COMPRAS TI
+// ============================================================
+const SETORES = [
+  'TI','Secretaria','Coordenação','Direção','Biblioteca',
+  'Laboratório de Ciências','Sala de Artes','Educação Física',
+  'Administrativo','Financeiro','RH','Limpeza/Conservação','Outro'
+];
+
+const STATUS_COMPRA = ['Solicitado','Em cotação','Aprovado','Pedido realizado','Recebido','Cancelado'];
+
+function comprasPage() {
+  const list = [...STATE.compras].sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
+  const totalGasto = STATE.compras.reduce((a,c)=>a+(c.valorTotal||0),0);
+  const pendentes  = STATE.compras.filter(c=>!['Recebido','Cancelado'].includes(c.status)).length;
+  const recebidos  = STATE.compras.filter(c=>c.status==='Recebido').length;
+
+  return `
+  <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:20px">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-shopping-cart"></i></div><div class="stat-info"><div class="stat-number">${STATE.compras.length}</div><div class="stat-label">Total de Compras</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-clock"></i></div><div class="stat-info"><div class="stat-number">${pendentes}</div><div class="stat-label">Em Andamento</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-circle-check"></i></div><div class="stat-info"><div class="stat-number">${recebidos}</div><div class="stat-label">Recebidos</div></div></div>
+    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-coin"></i></div><div class="stat-info"><div class="stat-number">R$ ${totalGasto.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="stat-label">Investimento Total</div></div></div>
+  </div>
+
+  <div class="filter-bar no-print">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar compra..." id="search-compra" oninput="filtrarCompras()"/></div>
+    <select class="filter-select" id="filter-compra-status" onchange="filtrarCompras()">
+      <option value="">Todos os status</option>
+      ${STATUS_COMPRA.map(s=>`<option value="${s}">${s}</option>`).join('')}
+    </select>
+    <select class="filter-select" id="filter-compra-uni" onchange="filtrarCompras()">
+      <option value="">Todas as unidades</option>
+      <option value="Matriz">Matriz</option>
+      <option value="Ensino Médio">Ensino Médio</option>
+    </select>
+    <button class="btn btn-primary" onclick="openModalCompra()"><i class="ti ti-plus"></i> Nova Compra</button>
+    <button class="btn btn-ghost" onclick="exportarCompras()"><i class="ti ti-download"></i> Exportar</button>
+    <button class="btn btn-ghost" onclick="imprimirCompras()"><i class="ti ti-printer"></i> Imprimir</button>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title"><i class="ti ti-shopping-cart"></i> Registro de Compras TI (${list.length})</span>
+    </div>
+    <div class="rel-table-wrap">
+      <table class="table-compact">
+        <thead><tr>
+          <th>#</th><th>Item / Produto</th><th>Fornecedor</th><th>Qtd</th>
+          <th>Vlr Unit.</th><th>Total</th><th>Data Compra</th>
+          <th>Nota Fiscal</th><th>Solicitante</th><th>Setor</th>
+          <th>Unidade</th><th>Status</th><th>Inv.</th><th>Ações</th>
+        </tr></thead>
+        <tbody id="compras-tbody">
+          ${renderComprasRows(list)}
+        </tbody>
+        ${list.length>0?`<tfoot>
+          <tr style="background:var(--gray-50)">
+            <td colspan="5" style="padding:10px 12px;font-weight:700;font-size:13px">TOTAL GERAL</td>
+            <td style="padding:10px 12px;font-weight:800;color:var(--primary);font-size:14px">R$ ${totalGasto.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+            <td colspan="8"></td>
+          </tr>
+        </tfoot>`:''}
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderComprasRows(list) {
+  if (!list.length) return `<tr><td colspan="14"><div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div></td></tr>`;
+  const statusColors = { 'Solicitado':'badge-pendente', 'Em cotação':'badge-andamento', 'Aprovado':'badge-reservado', 'Pedido realizado':'badge-aberto', 'Recebido':'badge-fechado', 'Cancelado':'badge-cancelado' };
+  return list.map(c=>`
+  <tr>
+    <td><strong style="color:var(--primary)">#${c.id}</strong></td>
+    <td>
+      <strong style="font-size:12px">${c.item}</strong>
+      ${c.descricao?`<br><span class="text-muted" style="font-size:10px">${c.descricao}</span>`:''}
+      ${c.categoria?`<br><span class="badge badge-reservado" style="font-size:10px;margin-top:2px">${c.categoria}</span>`:''}
+    </td>
+    <td style="font-size:12px">${c.fornecedor||'—'}<br><span class="text-muted" style="font-size:10px">${c.contatoFornecedor||''}</span></td>
+    <td style="text-align:center;font-weight:700">${c.quantidade||1}</td>
+    <td style="text-align:right;font-size:12px">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+    <td style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+    <td style="font-size:12px;white-space:nowrap">${formatDate(c.dataCompra)}</td>
+    <td style="font-size:11px;color:var(--gray-500)">${c.notaFiscal||'—'}</td>
+    <td style="font-size:12px">${c.solicitante||'—'}</td>
+    <td style="font-size:11px">${c.setor||'—'}</td>
+    <td style="font-size:11px">${c.unidade||'Matriz'}</td>
+    <td><span class="badge ${statusColors[c.status]||'badge-pendente'}" style="font-size:10px">${c.status}</span></td>
+    <td style="text-align:center">${c.adicionarInventario?'<i class="ti ti-check" style="color:var(--success);font-size:16px"></i>':'<i class="ti ti-x" style="color:var(--gray-300);font-size:14px"></i>'}</td>
+    <td>
+      <div style="display:flex;gap:2px">
+        <button class="btn-icon" onclick="editCompra(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
+        <button class="btn-icon" onclick="verCompra(${c.id})" title="Detalhes" style="color:var(--primary)"><i class="ti ti-eye"></i></button>
+        <button class="btn-icon" onclick="deleteCompra(${c.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+
+function filtrarCompras() {
+  const q    = ($('#search-compra')?.value||'').toLowerCase();
+  const st   = $('#filter-compra-status')?.value||'';
+  const uni  = $('#filter-compra-uni')?.value||'';
+  const list = [...STATE.compras]
+    .filter(c=>(!q||c.item?.toLowerCase().includes(q)||c.fornecedor?.toLowerCase().includes(q)||c.solicitante?.toLowerCase().includes(q))&&(!st||c.status===st)&&(!uni||(c.unidade||'Matriz')===uni))
+    .sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
+  const tb=$('#compras-tbody'); if(tb) tb.innerHTML=renderComprasRows(list);
+}
+
+function openModalCompra(compraId=null) {
+  const c = compraId ? STATE.compras.find(c=>c.id===compraId) : null;
+  openModal(`
+  <div class="modal modal-lg" style="max-width:720px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white">
+        <i class="ti ti-shopping-cart" style="color:#60a5fa"></i>
+        ${c?'Editar Compra':'Registrar Nova Compra'}
+      </span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+
+      <!-- ITEM -->
+      <div style="background:var(--primary-light);border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--primary)">
+        <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-box"></i> Dados do Produto / Serviço</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Descrição do Item / Produto</label>
+            <input type="text" id="cp-item" placeholder="Ex: Notebook Dell Inspiron 15" value="${c?.item||''}"/>
+          </div>
+          <div class="form-group">
+            <label class="required">Categoria</label>
+            <select id="cp-categoria">
+              <option value="">Selecione...</option>
+              ${['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Monitor','Mouse','Teclado','Impressora','Roteador','Switch','Cabo/Acessório','Software/Licença','Peça de Reposição','Material de Consumo','Serviço Técnico','Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Descrição Detalhada / Especificações</label>
+          <textarea id="cp-descricao" rows="2" placeholder="Especificações técnicas, cor, modelo, capacidade...">${c?.descricao||''}</textarea>
+        </div>
+        <div class="form-row-3">
+          <div class="form-group">
+            <label class="required">Quantidade</label>
+            <div class="qty-control">
+              <button class="qty-btn" type="button" onclick="changeQtyCp(-1)">−</button>
+              <input class="qty-value" type="number" id="cp-qtd" value="${c?.quantidade||1}" min="1" oninput="calcTotalCompra()"/>
+              <button class="qty-btn" type="button" onclick="changeQtyCp(1)">+</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="required">Valor Unitário (R$)</label>
+            <input type="number" id="cp-vlrunit" min="0" step="0.01" placeholder="0,00" value="${c?.valorUnitario||''}" oninput="calcTotalCompra()"/>
+          </div>
+          <div class="form-group">
+            <label>Valor Total (R$)</label>
+            <input type="number" id="cp-vlrtotal" min="0" step="0.01" placeholder="Calculado auto" value="${c?.valorTotal||''}" style="background:var(--gray-50)"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- FORNECEDOR -->
+      <div style="background:#f0fdf4;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--success)">
+        <div style="font-size:11px;font-weight:700;color:var(--success);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-building-store"></i> Fornecedor</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Nome do Fornecedor</label>
+            <input type="text" id="cp-fornecedor" placeholder="Ex: Dell, Kabum, Amazon, Magazin..." value="${c?.fornecedor||''}"/>
+          </div>
+          <div class="form-group">
+            <label>Contato / Site / CNPJ</label>
+            <input type="text" id="cp-contato" placeholder="site.com.br ou (11) 99999-9999" value="${c?.contatoFornecedor||''}"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- PEDIDO -->
+      <div style="background:#fff7ed;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--warning)">
+        <div style="font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-file-invoice"></i> Dados do Pedido</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Data da Compra</label>
+            <input type="date" id="cp-data" value="${c?.dataCompra||dateNow()}"/>
+          </div>
+          <div class="form-group">
+            <label>Nº da Nota Fiscal</label>
+            <input type="text" id="cp-nf" placeholder="Ex: NF-12345 (não obrigatório)" value="${c?.notaFiscal||''}"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Data de Entrega Prevista</label>
+            <input type="date" id="cp-entrega" value="${c?.dataEntrega||''}"/>
+          </div>
+          <div class="form-group">
+            <label class="required">Status da Compra</label>
+            <select id="cp-status">
+              ${STATUS_COMPRA.map(s=>`<option ${c?.status===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Link do Produto / Pedido</label>
+          <input type="text" id="cp-link" placeholder="https://..." value="${c?.link||''}"/>
+        </div>
+      </div>
+
+      <!-- SOLICITANTE / DESTINO -->
+      <div style="background:#fdf4ff;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid #7b1fa2">
+        <div style="font-size:11px;font-weight:700;color:#7b1fa2;text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-user-check"></i> Solicitante & Destino</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Solicitado por</label>
+            <div style="position:relative">
+              <input type="text" id="cp-solicitante" placeholder="Nome do solicitante" value="${c?.solicitante||STATE.currentUser.nome}" autocomplete="off" oninput="showUserSuggest(this,'cp-sol-list')"/>
+              <div id="cp-sol-list" class="autocomplete-list" style="display:none"></div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="required">Setor Destinatário</label>
+            <select id="cp-setor">
+              <option value="">Selecione...</option>
+              ${SETORES.map(s=>`<option ${c?.setor===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Unidade</label>
+            <select id="cp-unidade">
+              <option value="Matriz" ${!c||c.unidade==='Matriz'?'selected':''}>Matriz</option>
+              <option value="Ensino Médio" ${c?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Aprovado por</label>
+            <input type="text" id="cp-aprovado" placeholder="Nome de quem aprovou" value="${c?.aprovadoPor||''}"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- OBSERVAÇÕES + INVENTÁRIO -->
+      <div class="form-row">
+        <div class="form-group">
+          <label>Observações</label>
+          <textarea id="cp-obs" rows="2" placeholder="Informações adicionais, motivo da compra...">${c?.obs||''}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Garantia (meses)</label>
+          <input type="number" id="cp-garantia" min="0" placeholder="Ex: 12" value="${c?.garantiaMeses||''}"/>
+          <div style="margin-top:12px;padding:12px;background:var(--primary-light);border-radius:var(--radius);border:1.5px solid var(--primary-mid)">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+              <input type="checkbox" id="cp-inventario" ${c?.adicionarInventario?'checked':''} style="width:18px;height:18px;margin-top:1px;accent-color:var(--primary);flex-shrink:0">
+              <div>
+                <span style="font-size:13px;font-weight:700;color:var(--primary);display:block">Adicionar ao Inventário TI</span>
+                <span style="font-size:11px;color:var(--gray-500)">Ao receber, o item será registrado automaticamente no inventário com todos os dados.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer" style="background:var(--gray-50)">
+      <button class="btn btn-ghost" onclick="closeModal()"><i class="ti ti-x"></i> Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarCompra(${compraId||'null'})">
+        <i class="ti ti-check"></i> ${c?'Salvar Alterações':'Registrar Compra'}
+      </button>
+    </div>
+  </div>`);
+}
+
+function changeQtyCp(d) {
+  const i=$('#cp-qtd'); if(i) { i.value=Math.max(1,parseInt(i.value||1)+d); calcTotalCompra(); }
+}
+function calcTotalCompra() {
+  const qtd=parseFloat($('#cp-qtd')?.value)||0;
+  const unit=parseFloat($('#cp-vlrunit')?.value)||0;
+  const total=$('#cp-vlrtotal'); if(total) total.value=(qtd*unit).toFixed(2);
+}
+
+function salvarCompra(id) {
+  const item=$('#cp-item')?.value.trim();
+  const fornecedor=$('#cp-fornecedor')?.value.trim();
+  const data=$('#cp-data')?.value;
+  const solicitante=$('#cp-solicitante')?.value.trim();
+  const setor=$('#cp-setor')?.value;
+  if(!item||!fornecedor||!data||!solicitante||!setor){
+    toast('Preencha: Item, Fornecedor, Data, Solicitante e Setor.','error'); return;
+  }
+  const qtd=parseInt($('#cp-qtd')?.value)||1;
+  const vlrUnit=parseFloat($('#cp-vlrunit')?.value)||0;
+  const vlrTotal=parseFloat($('#cp-vlrtotal')?.value)||(qtd*vlrUnit);
+  const addInv=$('#cp-inventario')?.checked;
+  const status=$('#cp-status')?.value||'Solicitado';
+  const garantiaMeses=parseInt($('#cp-garantia')?.value)||0;
+
+  const dados={
+    item, categoria:$('#cp-categoria')?.value||'',
+    descricao:$('#cp-descricao')?.value||'',
+    fornecedor, contatoFornecedor:$('#cp-contato')?.value||'',
+    quantidade:qtd, valorUnitario:vlrUnit, valorTotal:vlrTotal,
+    dataCompra:data, notaFiscal:$('#cp-nf')?.value||'',
+    dataEntrega:$('#cp-entrega')?.value||'', status,
+    link:$('#cp-link')?.value||'',
+    solicitante, setor, unidade:$('#cp-unidade')?.value||'Matriz',
+    aprovadoPor:$('#cp-aprovado')?.value||'',
+    obs:$('#cp-obs')?.value||'',
+    garantiaMeses, adicionarInventario:addInv,
+    criado:dateNow()
+  };
+
+  if(id) {
+    const c=STATE.compras.find(c=>c.id===id);
+    if(c) { Object.assign(c,dados); fbSave('compras',c.id,c); }
+    toast('Compra atualizada!');
+  } else {
+    const nc={id:STATE.nextId.compra++,...dados};
+    STATE.compras.push(nc); fbSave('compras',nc.id,nc);
+    addNotification('Nova compra registrada',`${item} — ${fornecedor}`,'ti-shopping-cart');
+    // Se status Recebido e addInv, adicionar ao inventário
+    if(status==='Recebido'&&addInv) adicionarCompraInventario(nc);
+    toast('Compra registrada!');
+  }
+  closeModal(); saveState(); renderPage('compras');
+}
+
+function adicionarCompraInventario(c) {
+  const garantiaDate = c.garantiaMeses
+    ? new Date(new Date(c.dataCompra+'T12:00:00').getTime()+c.garantiaMeses*30*86400000).toISOString().split('T')[0]
+    : '';
+  const ni={
+    id:STATE.nextId.inventario++, nome:c.item,
+    categoria:c.categoria||'Outro', tipo:c.categoria||'',
+    marca:'', modelo:'', patrimonio:`CP-${c.id}`,
+    serie:'', ip:'', local:'', unidade:c.unidade,
+    garantia:garantiaDate, status:'ativo', obs:`Compra #${c.id} — ${c.fornecedor}`,
+    quantidade:c.quantidade
+  };
+  STATE.inventario.push(ni); fbSave('inventario',ni.id,ni);
+  toast(`${c.item} adicionado ao inventário!`,'info');
+}
+
+function editCompra(id) { openModalCompra(id); }
+
+function deleteCompra(id) {
+  if(!confirm('Excluir esta compra?')) return;
+  fbDelete('compras',id);
+  STATE.compras=STATE.compras.filter(c=>c.id!==id);
+  saveState(); renderPage('compras'); toast('Compra excluída.','info');
+}
+
+function verCompra(id) {
+  const c=STATE.compras.find(c=>c.id===id); if(!c) return;
+  openModal(`
+  <div class="modal" style="max-width:580px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-shopping-cart" style="color:#60a5fa"></i> Compra #${c.id}</span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <div style="padding:20px 24px;background:var(--primary);color:white">
+        <div style="font-size:20px;font-weight:800">${c.item}</div>
+        <div style="font-size:13px;opacity:.8;margin-top:4px">${c.categoria||''} ${c.descricao?'— '+c.descricao:''}</div>
+        <div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap">
+          <div style="text-align:center">
+            <div style="font-size:22px;font-weight:800">${c.quantidade}</div>
+            <div style="font-size:11px;opacity:.75">Unidades</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:22px;font-weight:800">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
+            <div style="font-size:11px;opacity:.75">Valor unitário</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:22px;font-weight:800">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
+            <div style="font-size:11px;opacity:.75">Total</div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:20px 24px">
+        ${[
+          ['Fornecedor', c.fornecedor, 'ti-building-store'],
+          ['Contato / Site', c.contatoFornecedor||'—', 'ti-phone'],
+          ['Data da Compra', formatDate(c.dataCompra), 'ti-calendar'],
+          ['Entrega Prevista', c.dataEntrega?formatDate(c.dataEntrega):'—', 'ti-truck'],
+          ['Nota Fiscal', c.notaFiscal||'—', 'ti-file-invoice'],
+          ['Solicitante', c.solicitante, 'ti-user'],
+          ['Aprovado por', c.aprovadoPor||'—', 'ti-user-check'],
+          ['Setor', c.setor, 'ti-building'],
+          ['Unidade', c.unidade||'Matriz', 'ti-map-pin'],
+          ['Garantia', c.garantiaMeses?c.garantiaMeses+' meses':'—', 'ti-shield-check'],
+          ['Status', c.status, 'ti-circle'],
+          ['Inventário', c.adicionarInventario?'Sim — será adicionado':'Não', 'ti-server'],
+        ].map(([l,v,ic])=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--gray-100)">
+          <i class="ti ${ic}" style="color:var(--primary);width:20px;text-align:center;flex-shrink:0"></i>
+          <span style="font-size:12px;color:var(--gray-500);min-width:130px">${l}</span>
+          <strong style="font-size:13px">${v}</strong>
+        </div>`).join('')}
+        ${c.obs?`<div style="margin-top:12px;padding:10px 12px;background:var(--gray-50);border-radius:8px;font-size:12px;color:var(--gray-600)">${c.obs}</div>`:''}
+        ${c.link?`<a href="${c.link}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;color:var(--primary)"><i class="ti ti-external-link"></i> Ver produto online</a>`:''}
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+      <button class="btn btn-primary" onclick="closeModal();editCompra(${c.id})"><i class="ti ti-edit"></i> Editar</button>
+      ${c.status==='Recebido'&&c.adicionarInventario?`<button class="btn btn-success" onclick="adicionarCompraInventario(STATE.compras.find(c=>c.id===${c.id}));renderPage('compras')"><i class="ti ti-server"></i> Adicionar ao Inventário</button>`:''}
+    </div>
+  </div>`);
+}
+
+function exportarCompras() {
+  exportarCSV(STATE.compras,'compras-ti-miro');
+}
+
+function imprimirCompras() {
+  const conteudo = document.querySelector('.card');
+  if (!conteudo) { toast('Nada para imprimir.','warning'); return; }
+  imprimirRelatorio();
+}
 
 // ===== IMPRESSÃO ROBUSTA =====
 function imprimirRelatorio() {
@@ -3530,6 +4348,8 @@ function setupRealtimeListeners() {
     inventario:      (d) => { STATE.inventario      = d; },
     licencas:        (d) => { STATE.licencas        = d.map(l=>{ const dv=diasParaVencer(l.vencimento); if(dv<=0) l.status='expirado'; else if(dv<=30) l.status='vencendo'; return l; }); },
     acompanhamentos: (d) => { STATE.acompanhamentos = d; },
+    compras:         (d) => { STATE.compras         = d; },
+    compras:         (d) => { STATE.compras         = d; },
   };
   for (const [col, setter] of Object.entries(colMap)) {
     onSnapshot(collection(db, col), (snap) => {
@@ -3591,7 +4411,13 @@ Object.assign(window, {
   configuracoes, salvarSLA, alterarSenha,
   renderChartTendencia,
   gerarDatasRecorrentes,
+  // Compras
+  comprasPage, openModalCompra, editCompra, deleteCompra, verCompra, salvarCompra,
+  changeQtyCp, calcTotalCompra, filtrarCompras, exportarCompras, imprimirCompras, adicionarCompraInventario,
   imprimirRelatorio,
+  // Compras
+  openModalCompra, editCompra, deleteCompra, verCompra, salvarCompra,
+  adicionarItemCompra, removerItemCompra, calcularTotalCompra, filtrarCompras,
   // Misc
   STATE,
 });
