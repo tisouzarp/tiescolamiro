@@ -75,7 +75,6 @@ async function fbLoadAll() {
         if (col === 'licencas')        STATE.licencas        = dados;
         if (col === 'acompanhamentos') STATE.acompanhamentos = dados;
         if (col === 'compras')        STATE.compras        = dados;
-        if (col === 'compras')        STATE.compras        = dados;
       }
     }
     // Carregar config (nextId etc)
@@ -439,7 +438,6 @@ function renderLayout() {
         <button class="nav-item ${STATE.currentPage==='usuarios'?'active':''}" data-page="usuarios"><i class="ti ti-users"></i> Usuários</button>
         <button class="nav-item ${STATE.currentPage==='compras'?'active':''}" data-page="compras"><i class="ti ti-shopping-cart"></i> Compras</button>
         <button class="nav-item ${STATE.currentPage==='relatorios'?'active':''}" data-page="relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
-        <button class="nav-item ${STATE.currentPage==='compras'?'active':''}" data-page="compras"><i class="ti ti-shopping-cart"></i> Compras TI</button>
         <button class="nav-item ${STATE.currentPage==='configuracoes'?'active':''}" data-page="configuracoes"><i class="ti ti-settings"></i> Configurações</button>
         ` : `
         <span class="nav-section-title">Menu</span>
@@ -492,7 +490,6 @@ function attachLayoutEvents() {
     else if (p==='mz-reservas'||p==='em-reservas') openModalReserva();
     else if (p==='mz-licencas'||p==='em-licencas') openModalLicenca();
     else if (p==='mz-usuarios'||p==='em-usuarios') openModalUsuario();
-    else if (p==='compras') openModalCompra();
     else if (p==='compras') openModalCompra();
     else if (p==='usuarios') openModalUsuario();
     else openModalReserva();
@@ -3961,52 +3958,51 @@ iniciar();
 Object.assign(window, {
   // Navegação
   navigateTo, renderPage, closeModal,
-  // Modais reserva
+  // Reservas
   openModalReserva, openModalReservaData, openModalReservaUnidade,
   editReserva, salvarReserva, changeReservaStatus, deleteReserva,
   updateEquipList, checkOutroEquip, toggleOutroSala, changeQty,
   filtrarResAtivas,
-  // Modais chamado
+  // Chamados
   openModalChamado, openModalChamadoUnidade,
   editChamado, salvarChamado, changeChamadoStatus, deleteChamado,
   // Acompanhamentos
   openModalAcompanhamento, salvarAcompanhamento,
-  // Modais equipamento
+  // Equipamentos
   openModalEquipamento, editEquipamento, salvarEquipamento, deleteEquipamento, changeQtyEq,
-  // Modais inventário
+  // Inventário
   openModalInventario, editInventario, salvarInventario, deleteInventario,
-  // Modais licença
+  // Licenças
   openModalLicenca, editLicenca, salvarLicenca, deleteLicenca,
-  // Modais usuário
-  openModalUsuario, editUsuario, salvarUsuario, deleteUsuario,
-  toggleUserStatus,
+  // Usuários
+  openModalUsuario, editUsuario, salvarUsuario, deleteUsuario, toggleUserStatus,
   // Menu e UI
   toggleMenu, toggleNavGroup, toggleActionsMenu: toggleMenu,
   // Relatórios
-  setRelMode, switchRelatorio, gerarRelatorio,
+  setRelMode, switchRelatorio, gerarRelatorio, imprimirRelatorio,
+  // Exportar
+  exportarCSV, exportarGeral, exportarReservas, exportarChamados,
+  exportarInventario, exportarLicencas, exportarEquipamentos, toggleExportMenu,
+  // Configurações
+  configuracoes, salvarSLA, alterarSenha,
   // Autocomplete
   showUserSuggest, selectUser,
+  // Aulas
+  toggleTodasAulas, sincronizarAulas, atualizarEstiloAulas,
+  toggleHorarioManual, atualizarPreviewHorario,
+  getAulasSelecionadas, getHorarioDasAulas, getLabelAulas,
+  // QR Code
+  abrirQRCode, imprimirQR,
+  // Gráficos
+  renderChartTendencia, gerarDatasRecorrentes,
   // Calendário
   openModalReservaData,
   // Unidades
-  renderUnidadeCharts, filtrarResAtivas,
-  // Aulas
-  toggleTodasAulas, sincronizarAulas, atualizarEstiloAulas, toggleHorarioManual, atualizarPreviewHorario,
-  getAulasSelecionadas, getHorarioDasAulas, getLabelAulas,
-  // Melhorias v7.3
-  abrirQRCode, imprimirQR,
-  exportarCSV, exportarGeral, exportarReservas, exportarChamados, exportarInventario, exportarLicencas, exportarEquipamentos,
-  toggleExportMenu,
-  configuracoes, salvarSLA, alterarSenha,
-  renderChartTendencia,
-  gerarDatasRecorrentes,
+  renderUnidadeCharts,
   // Compras
-  comprasPage, openModalCompra, editCompra, deleteCompra, verCompra, salvarCompra,
-  changeQtyCp, calcTotalCompra, filtrarCompras, exportarCompras, imprimirCompras, adicionarCompraInventario,
-  imprimirRelatorio,
-  // Compras
-  openModalCompra, editCompra, deleteCompra, verCompra, salvarCompra,
-  adicionarItemCompra, removerItemCompra, calcularTotalCompra, filtrarCompras,
+  comprasPage, openModalCompra, editCompra, deleteCompra,
+  verCompra, salvarCompra, adicionarItemCompra, removerItemCompra,
+  calcularTotalCompra, filtrarCompras,
   // Misc
   STATE,
 });
