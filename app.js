@@ -289,6 +289,23 @@ function openModal(html, id='main-modal') {
 function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
 
 // ===== PERSISTENCE =====
+
+function saveLocal() {
+  try {
+    localStorage.setItem('miro_ti_v2', JSON.stringify({
+      reservas:STATE.reservas, chamados:STATE.chamados,
+      equipamentos:STATE.equipamentos, users:STATE.users,
+      inventario:STATE.inventario, licencas:STATE.licencas,
+      nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30),
+      acompanhamentos:STATE.acompanhamentos, compras:(STATE.compras||[])
+    }));
+    if (STATE.currentUser)
+      localStorage.setItem('miro_ti_session', JSON.stringify({ userId: STATE.currentUser.id, page: STATE.currentPage }));
+    else
+      localStorage.removeItem('miro_ti_session');
+  } catch(e) {}
+}
+
 function saveState() {
   try {
     localStorage.setItem('miro_ti_v2', JSON.stringify({ reservas:STATE.reservas, chamados:STATE.chamados, equipamentos:STATE.equipamentos, users:STATE.users, inventario:STATE.inventario, licencas:STATE.licencas, nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30), acompanhamentos:STATE.acompanhamentos, compras:STATE.compras }));
@@ -308,7 +325,6 @@ function loadState() {
     }
   } catch(e) {}
 }
-window.addEventListener('beforeunload', saveState);
 
 // ===== NOTIFICATIONS =====
 function addNotification(titulo, sub, icon='ti-info-circle') {
