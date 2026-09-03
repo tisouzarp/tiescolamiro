@@ -1118,7 +1118,6 @@ function renderArqReservas() {
     <button class="btn-icon" onclick="deleteReserva(${r.id});renderPage('arquivados')" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
   </div></td></tr>`).join('')}</tbody></table></div></div>`;
 }
-document.addEventListener('click',e=>{ if(e.target.matches('[data-arq]')){ $$('[data-arq]').forEach(t=>t.classList.remove('active')); e.target.classList.add('active'); $('#arq-content').innerHTML=e.target.dataset.arq==='chamados'?renderArqChamados():renderArqReservas(); } });
 
 // ===== INVENTÁRIO TI =====
 const INV_CATS=['Rede','Impressora','Computador','Notebook','Monitor','Servidor','Câmera','Telefone IP','No-break','Access Point','Outro'];
@@ -3951,6 +3950,7 @@ async function iniciar() {
   STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
 
   // 4. Renderizar
+  window.addEventListener('beforeunload', saveLocal);
   setTimeout(() => render(), 300);
 }
 
@@ -3983,6 +3983,75 @@ function setupRealtimeListeners() {
   }
 }
 
+// ===== AUTOCOMPLETE USUÁRIOS =====
+function showUserSuggest(input, listId) {
+  const val = input.value.toLowerCase();
+  const list = document.getElementById(listId);
+  if (!list) return;
+  if (!val) { list.style.display = 'none'; return; }
+  const matches = STATE.users.filter(u => u.status === 'ativo' && u.nome.toLowerCase().includes(val)).slice(0, 6);
+  if (!matches.length) { list.style.display = 'none'; return; }
+  list.innerHTML = matches.map(u => `
+    <div class="autocomplete-item" onmousedown="event.preventDefault();event.stopPropagation();selectUser('${u.nome}','${input.id}','${listId}')">
+      <div class="autocomplete-avatar">${initials(u.nome)}</div>
+      <div>
+        <div style="font-weight:600;font-size:13px">${u.nome}</div>
+        <div style="font-size:11px;color:var(--gray-400)">${u.unidade||''} · ${u.role==='admin'?'Admin':'Usuário'}</div>
+      </div>
+    </div>`).join('');
+  list.style.display = 'block';
+  const closeHandler = e => {
+    if (!list.contains(e.target) && e.target !== input) {
+      list.style.display = 'none';
+      document.removeEventListener('mousedown', closeHandler);
+    }
+  };
+  document.addEventListener('mousedown', closeHandler);
+}
+
+function selectUser(nome, inputId, listId) {
+  const input = document.getElementById(inputId);
+  const list  = document.getElementById(listId);
+  if (input) { input.value = nome; input.focus(); }
+  if (list)  list.style.display = 'none';
+}
+
+// ===== COMPRAS — funções auxiliares =====
+function adicionarItemCompra() {
+  const wrap = document.getElementById('cp-itens-wrap');
+  if (!wrap) return;
+  const idx = wrap.children.length;
+  const div = document.createElement('div');
+  div.className = 'cp-item-row';
+  div.id = 'cpitem-' + idx;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 80px 110px 32px;gap:8px;margin-bottom:8px;align-items:center';
+  div.innerHTML =
+    '<input type="text" placeholder="Nome do item" class="cp-item-nome" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>' +
+    '<input type="number" placeholder="Qtd" value="1" min="1" class="cp-item-qtd" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;text-align:center"/>' +
+    '<input type="number" placeholder="R$ Unit." step="0.01" min="0" class="cp-item-valor" oninput="calcularTotalCompra()" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>' +
+    '<button type="button" class="btn-icon" onclick="this.parentElement.remove();calcularTotalCompra()" style="color:var(--danger)"><i class="ti ti-trash"></i></button>';
+  wrap.appendChild(div);
+}
+
+function removerItemCompra(idx) {
+  const el = document.getElementById('cpitem-' + idx);
+  if (el) { el.remove(); calcularTotalCompra(); }
+}
+
+function calcularTotalCompra() {
+  let total = 0;
+  $$('.cp-item-row').forEach(function(row) {
+    const qtd = parseFloat(row.querySelector('.cp-item-qtd') ? row.querySelector('.cp-item-qtd').value : 0) || 0;
+    const val = parseFloat(row.querySelector('.cp-item-valor') ? row.querySelector('.cp-item-valor').value : 0) || 0;
+    total += qtd * val;
+  });
+  const disp = document.getElementById('cp-total-display');
+  const hidden = document.getElementById('cp-valor-total');
+  if (disp) disp.textContent = 'R$ ' + total.toLocaleString('pt-BR', {minimumFractionDigits:2});
+  if (hidden) hidden.value = total;
+}
+
+
 Object.assign(window, {
   // Navegação
   navigateTo, renderPage, closeModal,
@@ -4005,7 +4074,7 @@ Object.assign(window, {
   // Usuários
   openModalUsuario, editUsuario, salvarUsuario, deleteUsuario, toggleUserStatus,
   // Menu e UI
-  toggleMenu, toggleNavGroup, toggleActionsMenu: toggleMenu,
+  toggleMenu, toggleNavGroup,
   // Relatórios
   setRelMode, switchRelatorio, gerarRelatorio, imprimirRelatorio,
   // Exportar

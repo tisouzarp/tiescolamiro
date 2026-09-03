@@ -9,9 +9,26 @@
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.6.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Capturar erros ANTES do app.js carregar
+    window.onerror = function(msg, src, line, col, err) {
+      document.getElementById('app').innerHTML =
+        '<div style="padding:30px;background:#fee2e2;border:2px solid red;margin:20px;border-radius:8px;font-family:monospace">' +
+        '<h2 style="color:red">❌ Erro JavaScript - Linha ' + line + '</h2>' +
+        '<p>' + msg + '</p>' +
+        '<pre style="background:white;padding:10px;overflow:auto;font-size:11px">' + (err ? err.stack : '') + '</pre>' +
+        '</div>';
+      return false;
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+      document.getElementById('app').innerHTML =
+        '<div style="padding:30px;background:#fef3c7;border:2px solid orange;margin:20px;border-radius:8px;font-family:monospace">' +
+        '<h2>⚠️ Erro de Promise</h2><pre>' + e.reason + '</pre></div>';
+    });
+  </script>
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app"><div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;color:#666">Carregando...</div></div>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
