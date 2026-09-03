@@ -46,7 +46,7 @@ async function initFirebase() {
   try {
     // Aguardar SDK global do Firebase (carregado via script no index.html)
     let tentativas = 0;
-    while (typeof firebase === 'undefined' && tentativas < 30) {
+    while (typeof firebase === 'undefined' && tentativas < 20) {
       await new Promise(r => setTimeout(r, 200));
       tentativas++;
     }
@@ -3381,6 +3381,7 @@ function renderSLABadge(chamado) {
 
 
 // ===== COMPRAS =====
+const STATUS_COMPRA = ['aguardando','recebido','parcial','devolvido'];
 const SETORES_COMPRA = ['TI', 'Secretaria', 'Coordenação', 'Direção', 'Biblioteca', 'Laboratório', 'Administrativo', 'Outro'];
 const CATS_COMPRA = ['Acessório', 'Cabo/Conectores', 'Caixa de Som', 'Computador', 'Consumível', 'Câmera', 'Impressora', 'Licença de Software', 'Microfone', 'Monitor', 'Móvel/Suporte', 'Notebook', 'Outro', 'Periférico', 'Rede (Switch/Roteador)', 'iPad/Tablet'];
 
