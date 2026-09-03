@@ -24,18 +24,35 @@ let OFFLINE_MODE = false;
 
 async function initFirebase() {
   try {
-    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, writeBatch, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    // Aguardar SDK global do Firebase (carregado via script no index.html)
+    let tentativas = 0;
+    while (typeof firebase === 'undefined' && tentativas < 30) {
+      await new Promise(r => setTimeout(r, 200));
+      tentativas++;
+    }
+    if (typeof firebase === 'undefined') throw new Error('Firebase SDK não carregado');
 
-    window.FB_APP   = initializeApp(FIREBASE_CONFIG);
-    window.FB_DB    = getFirestore(window.FB_APP);
-    window.FB_FUNS  = { collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, writeBatch, serverTimestamp };
-    db = window.FB_DB;
+    const app = firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore(app);
+
+    window.FB_DB = db;
+    window.FB_FUNS = {
+      collection: (db, col) => db.collection(col),
+      getDocs: (ref) => ref.get(),
+      setDoc: (ref, data) => ref.set(data, { merge: true }),
+      doc: (db, col, id) => db.collection(col).doc(String(id)),
+      deleteDoc: (ref) => ref.delete(),
+      onSnapshot: (ref, cb) => ref.onSnapshot(snap => {
+        const docs = [];
+        snap.forEach(d => docs.push(d.data()));
+        cb({ empty: docs.length === 0, docs: snap.docs });
+      }),
+    };
     DB_READY = true;
     console.log('Firebase conectado!');
     return true;
   } catch(e) {
-    console.warn('Firebase offline, usando localStorage:', e);
+    console.warn('Firebase indisponível, usando localStorage:', e.message);
     OFFLINE_MODE = true;
     return false;
   }
@@ -45,26 +62,23 @@ async function initFirebase() {
 async function fbSave(colecao, id, dados) {
   if (!DB_READY) { saveLocal(); return; }
   try {
-    const { doc, setDoc } = window.FB_FUNS;
-    await setDoc(doc(db, colecao, String(id)), { ...dados, _id: id });
+    await db.collection(colecao).doc(String(id)).set({ ...dados, _id: id }, { merge: true });
   } catch(e) { console.error('fbSave error:', e); saveLocal(); }
 }
 
 async function fbDelete(colecao, id) {
-  if (!DB_READY) { saveLocal(); return; }
+  if (!DB_READY) return;
   try {
-    const { doc, deleteDoc } = window.FB_FUNS;
-    await deleteDoc(doc(db, colecao, String(id)));
+    await db.collection(colecao).doc(String(id)).delete();
   } catch(e) { console.error('fbDelete error:', e); }
 }
 
 async function fbLoadAll() {
   if (!DB_READY) return false;
   try {
-    const { collection, getDocs } = window.FB_FUNS;
-    const colecoes = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','compras'];
-    for (const col of colecoes) {
-      const snap = await getDocs(collection(db, col));
+    const cols = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','compras'];
+    for (const col of cols) {
+      const snap = await db.collection(col).get();
       if (!snap.empty) {
         const dados = snap.docs.map(d => d.data());
         if (col === 'users')           STATE.users           = dados;
@@ -74,13 +88,12 @@ async function fbLoadAll() {
         if (col === 'inventario')      STATE.inventario      = dados;
         if (col === 'licencas')        STATE.licencas        = dados;
         if (col === 'acompanhamentos') STATE.acompanhamentos = dados;
-        if (col === 'compras')        STATE.compras        = dados;
+        if (col === 'compras')         STATE.compras         = dados;
       }
     }
-    // Carregar config (nextId etc)
-    const configSnap = await getDocs(collection(db, 'config'));
-    if (!configSnap.empty) {
-      const cfg = configSnap.docs[0].data();
+    const cfgSnap = await db.collection('config').get();
+    if (!cfgSnap.empty) {
+      const cfg = cfgSnap.docs[0].data();
       if (cfg.nextId) STATE.nextId = cfg.nextId;
     }
     console.log('Dados carregados do Firebase!');
@@ -94,8 +107,7 @@ async function fbLoadAll() {
 async function fbSaveConfig() {
   if (!DB_READY) return;
   try {
-    const { doc, setDoc } = window.FB_FUNS;
-    await setDoc(doc(db, 'config', 'main'), { nextId: STATE.nextId });
+    await db.collection('config').doc('main').set({ nextId: STATE.nextId });
   } catch(e) { console.error('fbSaveConfig error:', e); }
 }
 
