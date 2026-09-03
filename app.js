@@ -1,3 +1,23 @@
+// ===== CAPTURA DE ERROS GLOBAIS =====
+window.onerror = function(msg, src, line, col, err) {
+  document.getElementById('app').innerHTML = `
+    <div style="padding:40px;font-family:monospace;background:#fee;border:2px solid red;margin:20px;border-radius:8px">
+      <h2 style="color:red">❌ Erro JavaScript</h2>
+      <p><b>Mensagem:</b> ${msg}</p>
+      <p><b>Arquivo:</b> ${src}</p>
+      <p><b>Linha:</b> ${line}, Coluna: ${col}</p>
+      <pre style="background:#fff;padding:10px;margin-top:10px;overflow:auto">${err ? err.stack : 'sem stack'}</pre>
+    </div>`;
+  return false;
+};
+window.addEventListener('unhandledrejection', function(e) {
+  document.getElementById('app').innerHTML = `
+    <div style="padding:40px;font-family:monospace;background:#fee;border:2px solid red;margin:20px;border-radius:8px">
+      <h2 style="color:red">❌ Erro de Promise não capturada</h2>
+      <pre style="background:#fff;padding:10px;overflow:auto">${e.reason}</pre>
+    </div>`;
+});
+
 /* ============================================================
    TI - ESCOLA MIRÓ | Sistema de Chamados e Reservas v2
    Responsável: Tiago Souza
