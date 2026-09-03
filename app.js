@@ -3951,10 +3951,6 @@ function setupRealtimeListeners() {
   }
 }
 
-iniciar();
-
-// ===== EXPOR FUNÇÕES GLOBALMENTE (necessário para módulos ES) =====
-// onclick no HTML não enxerga funções de módulos sem isso
 Object.assign(window, {
   // Navegação
   navigateTo, renderPage, closeModal,
@@ -4006,3 +4002,7 @@ Object.assign(window, {
   // Misc
   STATE,
 });
+iniciar();
+
+// ===== EXPOR FUNÇÕES GLOBALMENTE (necessário para módulos ES) =====
+// onclick no HTML não enxerga funções de módulos sem isso
