@@ -3625,7 +3625,7 @@ function openModalCompra(compraId=null) {
             <label class="required">Setor Destinatário</label>
             <select id="cp-setor">
               <option value="">Selecione...</option>
-              ${SETORES.map(s=>`<option ${c?.setor===s?'selected':''}>${s}</option>`).join('')}
+              ${SETORES_COMPRA.map(s=>`<option ${c?.setor===s?'selected':''}>${s}</option>`).join('')}
             </select>
           </div>
         </div>
