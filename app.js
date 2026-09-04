@@ -501,6 +501,12 @@ function renderLayout() {
     <div class="main-content">
       <header class="main-header">
         <h1 class="page-title" id="page-title">Dashboard</h1>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${DB_READY?'#d1fae5':'#fee2e2'};color:${DB_READY?'#065f46':'#991b1b'}">
+            <span style="width:7px;height:7px;border-radius:50%;background:${DB_READY?'#10b981':'#ef4444'};display:inline-block"></span>
+            ${DB_READY?'Nuvem ✓':'Offline ⚠️'}
+          </div>
+        </div>
         <div class="header-actions">
           ${isAdmin ? `
           <div style="position:relative">
@@ -3276,6 +3282,27 @@ function configuracoes() {
     </div>
 
     <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-cloud-upload"></i> Backup & Restauração</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">
+          Faça backup regularmente para não perder dados. O arquivo JSON pode ser restaurado a qualquer momento.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-primary" onclick="exportarBackupJSON()">
+            <i class="ti ti-download"></i> Exportar Backup JSON (todos os dados)
+          </button>
+          <button class="btn btn-ghost" onclick="importarBackupJSON()" style="border-color:var(--warning);color:var(--warning)">
+            <i class="ti ti-upload"></i> Restaurar Backup (importar JSON)
+          </button>
+        </div>
+        <div style="margin-top:12px;padding:10px;background:var(--warning-bg);border-radius:6px;font-size:11px;color:var(--gray-600)">
+          <i class="ti ti-info-circle"></i>
+          <strong>Dica:</strong> Faça backup toda semana e salve em uma pasta no Google Drive ou pendrive. O backup automático também roda a cada 30 minutos enquanto o sistema estiver aberto.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-header"><span class="card-title"><i class="ti ti-info-circle"></i> Sobre o Sistema</span></div>
       <div class="card-body">
         <div style="text-align:center;padding:20px">
@@ -3968,6 +3995,7 @@ async function iniciar() {
 
   // 4. Renderizar
   window.addEventListener('beforeunload', saveLocal);
+  iniciarBackupAutomatico();
   setTimeout(() => render(), 300);
 }
 
@@ -3998,6 +4026,112 @@ function setupRealtimeListeners() {
       }
     });
   }
+}
+
+
+// ===== BACKUP & RESTAURAÇÃO =====
+function exportarBackupJSON() {
+  const dados = {
+    versao: '8.9',
+    exportadoEm: new Date().toISOString(),
+    reservas:        STATE.reservas,
+    chamados:        STATE.chamados,
+    equipamentos:    STATE.equipamentos,
+    users:           STATE.users,
+    inventario:      STATE.inventario,
+    licencas:        STATE.licencas,
+    acompanhamentos: STATE.acompanhamentos,
+    compras:         STATE.compras || [],
+    nextId:          STATE.nextId,
+  };
+  const json = JSON.stringify(dados, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const data = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+  a.href = url;
+  a.download = 'backup-ti-miro-' + data + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('✅ Backup salvo! Guarde o arquivo em lugar seguro.', 'success');
+}
+
+function importarBackupJSON() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const dados = JSON.parse(text);
+      if (!dados.reservas || !dados.chamados) {
+        toast('Arquivo inválido — não é um backup do sistema.', 'error');
+        return;
+      }
+      if (!confirm('Isso vai SUBSTITUIR todos os dados atuais pelo backup. Confirma?')) return;
+
+      // Restaurar no STATE
+      if (dados.reservas)        STATE.reservas        = dados.reservas;
+      if (dados.chamados)        STATE.chamados        = dados.chamados;
+      if (dados.equipamentos)    STATE.equipamentos    = dados.equipamentos;
+      if (dados.users)           STATE.users           = dados.users;
+      if (dados.inventario)      STATE.inventario      = dados.inventario;
+      if (dados.licencas)        STATE.licencas        = dados.licencas;
+      if (dados.acompanhamentos) STATE.acompanhamentos = dados.acompanhamentos;
+      if (dados.compras)         STATE.compras         = dados.compras;
+      if (dados.nextId)          STATE.nextId          = dados.nextId;
+
+      // Enviar tudo para o Firebase
+      if (DB_READY) {
+        toast('Enviando dados para o Firebase...', 'info');
+        const cols = {
+          users: STATE.users, equipamentos: STATE.equipamentos,
+          reservas: STATE.reservas, chamados: STATE.chamados,
+          inventario: STATE.inventario, licencas: STATE.licencas,
+          acompanhamentos: STATE.acompanhamentos, compras: STATE.compras,
+        };
+        for (const [col, lista] of Object.entries(cols)) {
+          for (const item of lista) {
+            const id = item.id || item.usuario || item._id;
+            if (id) await fbSave(col, id, item);
+          }
+        }
+        await fbSaveConfig();
+      }
+
+      saveLocal();
+      renderPage(STATE.currentPage);
+      toast('✅ Backup restaurado com sucesso!', 'success');
+    } catch(err) {
+      toast('Erro ao ler o arquivo: ' + err.message, 'error');
+    }
+  };
+  input.click();
+}
+
+// Backup automático a cada 30 minutos
+function iniciarBackupAutomatico() {
+  setInterval(() => {
+    if (!STATE.currentUser) return;
+    saveLocal();
+    // Salvar também no IndexedDB via localStorage com timestamp
+    try {
+      localStorage.setItem('miro_backup_auto', JSON.stringify({
+        ts: new Date().toISOString(),
+        reservas: STATE.reservas,
+        chamados: STATE.chamados,
+        equipamentos: STATE.equipamentos,
+        users: STATE.users,
+        inventario: STATE.inventario,
+        licencas: STATE.licencas,
+        acompanhamentos: STATE.acompanhamentos,
+        compras: STATE.compras || [],
+        nextId: STATE.nextId,
+      }));
+    } catch(e) {}
+  }, 30 * 60 * 1000); // 30 minutos
 }
 
 // ===== AUTOCOMPLETE USUÁRIOS =====
@@ -4117,6 +4251,8 @@ Object.assign(window, {
   comprasPage, openModalCompra, editCompra, deleteCompra,
   verCompra, salvarCompra, adicionarItemCompra, removerItemCompra,
   calcularTotalCompra, filtrarCompras,
+  // Backup
+  exportarBackupJSON, importarBackupJSON,
   // Misc
   STATE,
 });
