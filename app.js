@@ -80,10 +80,10 @@ async function initFirebase() {
 
 // ===== FIREBASE HELPERS =====
 async function fbSave(colecao, id, dados) {
-  if (!DB_READY) { saveLocal(); return; }
+  if (!DB_READY) { saveState(); return; }
   try {
     await db.collection(colecao).doc(String(id)).set({ ...dados, _id: id }, { merge: true });
-  } catch(e) { console.error('fbSave error:', e); saveLocal(); }
+  } catch(e) { console.error('fbSave error:', e); saveState(); }
 }
 
 async function fbDelete(colecao, id) {
@@ -237,9 +237,8 @@ const STATE = {
     { id: 3, nome: 'Windows 11 Pro', fornecedor: 'Microsoft', tipo: 'OEM', quantidade: 20, chave: 'WIN11-XXXXX', dataCompra: '2023-06-01', vencimento: '9999-12-31', valor: 8000.00, status: 'ativo', unidade: 'Ensino Médio', obs: 'Licenças perpétuas' },
   ],
   nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1, compra: 1 },
-  compras: [],
   acompanhamentos: [], // { id, chamadoId, texto, autor, tipo, criado }
-  compras: [], // { id, descricao, categoria, fornecedor, dataCompra, nfNumero, valorTotal, solicitante, setor, unidade, itens, addInventario, status, obs }
+  compras: [], // { id, item, categoria, descricao, fornecedor, contatoFornecedor, quantidade, valorUnitario, valorTotal, dataCompra, notaFiscal, dataEntrega, status, link, solicitante, setor, unidade, aprovadoPor, obs, garantiaMeses, adicionarInventario, criado }
   filtros: { reserva: '', chamado: '', chamadoPrio: '', reservaSearch: '', chamadoSearch: '' },
   sla: { Alta: 2, Media: 8, Baixa: 24 }, // horas de SLA por prioridade
 };
@@ -290,7 +289,7 @@ function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
 
 // ===== PERSISTENCE =====
 
-function saveLocal() {
+function saveState() {
   try {
     localStorage.setItem('miro_ti_v2', JSON.stringify({
       reservas:STATE.reservas, chamados:STATE.chamados,
@@ -303,14 +302,6 @@ function saveLocal() {
       localStorage.setItem('miro_ti_session', JSON.stringify({ userId: STATE.currentUser.id, page: STATE.currentPage }));
     else
       localStorage.removeItem('miro_ti_session');
-  } catch(e) {}
-}
-
-function saveState() {
-  try {
-    localStorage.setItem('miro_ti_v2', JSON.stringify({ reservas:STATE.reservas, chamados:STATE.chamados, equipamentos:STATE.equipamentos, users:STATE.users, inventario:STATE.inventario, licencas:STATE.licencas, nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30), acompanhamentos:STATE.acompanhamentos, compras:STATE.compras }));
-    if (STATE.currentUser) localStorage.setItem('miro_ti_session', JSON.stringify({ userId: STATE.currentUser.id, page: STATE.currentPage }));
-    else localStorage.removeItem('miro_ti_session');
   } catch(e) {}
 }
 function loadState() {
@@ -576,7 +567,6 @@ function renderPage(page) {
     'em-usuarios': ()=>paginaUnidade('usuarios','Ensino Médio'),
     'em-relatorios': ()=>paginaUnidade('relatorios','Ensino Médio'),
     'reservas-ativas': reservasAtivasPage,
-    'compras': comprasPage,
     'compras': comprasPage,
     'configuracoes': configuracoes,
   };
@@ -2316,8 +2306,9 @@ function renderRelatorioCharts() {
 
 
 // ===== MODALS: RESERVA =====
-function openModalReserva(reservaId=null, preData=null) {
+function openModalReserva(reservaId=null, preData=null, unidadeFixa=null) {
   const r=reservaId?STATE.reservas.find(r=>r.id===reservaId):null;
+  const unidadeDefault = unidadeFixa || r?.unidade || 'Matriz';
   const TIPOS=['Apresentador', 'Caixa de Som', 'Controle Projetor', 'Câmera', 'Filmadora', 'Impressora', 'Microfone', 'Monitor', 'Mouse', 'Notebook', 'Projetor', 'Rádio Comunicador Motorola', 'Tablet', 'Teclado', 'WebCam', 'iPad', 'Roteador', 'Switch', 'Outro'];
   openModal(`
   <div class="modal modal-lg">
@@ -2345,7 +2336,7 @@ function openModalReserva(reservaId=null, preData=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Unidade</label>
-          <select id="res-unidade"><option value="Matriz" ${!r||r.unidade==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${r?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option></select>
+          <select id="res-unidade"><option value="Matriz" ${unidadeDefault==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${unidadeDefault==='Ensino Médio'?'selected':''}>Ensino Médio</option></select>
         </div>
         <div class="form-group">
           <label class="required">Cargo</label>
@@ -2576,8 +2567,9 @@ function salvarReserva(id) {
 }
 
 // ===== MODALS: CHAMADO =====
-function openModalChamado(chamadoId=null) {
+function openModalChamado(chamadoId=null, unidadeFixa=null) {
   const c=chamadoId?STATE.chamados.find(c=>c.id===chamadoId):null;
+  const unidadeDefault = unidadeFixa || c?.unidade || 'Matriz';
   openModal(`
   <div class="modal modal-lg">
     <div class="modal-header">
@@ -2609,7 +2601,7 @@ function openModalChamado(chamadoId=null) {
         </div>
         <div class="form-group">
           <label>Unidade</label>
-          <select id="ch-unidade"><option value="Matriz" ${!c||c.unidade==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${c?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option></select>
+          <select id="ch-unidade"><option value="Matriz" ${unidadeDefault==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${unidadeDefault==='Ensino Médio'?'selected':''}>Ensino Médio</option></select>
         </div>
       </div>
       <div class="form-row">
@@ -2806,14 +2798,18 @@ function salvarEquipamento(id) {
   const data={ nome, tipo, patrimonio:pat, marca:$('#eq-marca')?.value||'', modelo:$('#eq-modelo')?.value||'', serie:$('#eq-serie')?.value||'', local:$('#eq-local')?.value||'', unidade:$('#eq-unidade')?.value||'Matriz', status:$('#eq-status')?.value||'disponivel', descricao:$('#eq-desc')?.value||'', quantidade:qtd };
   if(id){
     const e=STATE.equipamentos.find(e=>e.id===id); if(e) Object.assign(e,data);
-    // sync inventario if exists
     const inv=STATE.inventario.find(i=>i.patrimonio===pat);
-    if(inv) Object.assign(inv,{ nome, marca:data.marca, modelo:data.modelo, serie:data.serie, local:data.local, unidade:data.unidade, status:data.status==='disponivel'?'ativo':data.status, quantidade:qtd });
-    toast('Equipamento atualizado!');
+    if(inv) { Object.assign(inv,{ nome, marca:data.marca, modelo:data.modelo, serie:data.serie, local:data.local, unidade:data.unidade, status:data.status==='disponivel'?'ativo':data.status, quantidade:qtd }); fbSave('inventario',inv.id,inv); }
+    else if(addInv){
+      const ni={ id:STATE.nextId.inventario++, nome, categoria:tipo, tipo, marca:data.marca, modelo:data.modelo, patrimonio:pat, serie:data.serie, ip:'', local:data.local, unidade:data.unidade, garantia:'', status:'ativo', obs:data.descricao, quantidade:qtd };
+      STATE.inventario.push(ni); fbSave('inventario',ni.id,ni);
+    }
+    toast(inv?'Equipamento atualizado!':'Equipamento atualizado e adicionado ao Inventário!');
   } else {
     STATE.equipamentos.push({id:STATE.nextId.equipamento++,...data});
     if(addInv){
-      STATE.inventario.push({ id:STATE.nextId.inventario++, nome, categoria:tipo, tipo, marca:data.marca, modelo:data.modelo, patrimonio:pat, serie:data.serie, ip:'', local:data.local, unidade:data.unidade, garantia:'', status:'ativo', obs:data.descricao, quantidade:qtd });
+      const ni={ id:STATE.nextId.inventario++, nome, categoria:tipo, tipo, marca:data.marca, modelo:data.modelo, patrimonio:pat, serie:data.serie, ip:'', local:data.local, unidade:data.unidade, garantia:'', status:'ativo', obs:data.descricao, quantidade:qtd };
+      STATE.inventario.push(ni); fbSave('inventario',ni.id,ni);
       toast('Equipamento cadastrado e adicionado ao Inventário!');
     } else {
       toast('Equipamento cadastrado!');
@@ -3223,6 +3219,185 @@ function exportarInventario() { exportarCSV(STATE.inventario, 'inventario-miro')
 function exportarLicencas() { exportarCSV(STATE.licencas, 'licencas-miro'); }
 function exportarEquipamentos() { exportarCSV(STATE.equipamentos, 'equipamentos-miro'); }
 
+function exportarUsuariosCSV() {
+  const dados = STATE.users.map(u => ({ Nome: u.nome, 'Nome de usuário': u.usuario, 'E-mail': u.email, Perfil: u.role, Unidade: u.unidade||'', Status: u.status }));
+  exportarCSV(dados, 'usuarios-miro');
+}
+
+// ===== IMPORTAÇÃO GENÉRICA CSV =====
+const IMPORT_CONFIG = {
+  usuarios: {
+    titulo: 'Importar Usuários',
+    icone: 'ti-user-plus',
+    cols: ['Nome','Nome de usuário','E-mail','Senha','Perfil','Unidade'],
+    required: ['Nome','Nome de usuário','E-mail'],
+    estadoKey: 'users',
+    duplicateCheck: (row, existing) => existing.find(u => u.usuario === row.login || u.email === row.email),
+    mapRow: (row, id, hash) => ({
+      id, nome: row.Nome, email: row['E-mail'], usuario: row.login,
+      senha: hash, role: row.Perfil === 'Administrador' ? 'admin' : 'usuario',
+      status: 'ativo', unidade: row.Unidade || 'Matriz', criado: dateNow()
+    }),
+    nextIdKey: 'usuario',
+    fbCol: 'users',
+    toastMsg: (n, d) => `Importação de usuários concluída! ${n} criados, ${d} duplicados ignorados.`,
+  },
+  equipamentos: {
+    titulo: 'Importar Equipamentos',
+    icone: 'ti-device-laptop',
+    cols: ['Nome','Tipo','Patrimônio','Marca','Modelo','Série','Local','Unidade','Status','Quantidade','Descrição'],
+    required: ['Nome','Tipo','Patrimônio'],
+    estadoKey: 'equipamentos',
+    duplicateCheck: (row, existing) => existing.find(e => e.patrimonio === row.Patrimônio),
+    mapRow: (row, id) => ({
+      id, nome: row.Nome, tipo: row.Tipo, patrimonio: row.Patrimônio,
+      marca: row.Marca||'', modelo: row.Modelo||'', serie: row['Série']||'',
+      local: row.Local||'', unidade: row.Unidade||'Matriz',
+      status: row.Status||'disponivel', quantidade: parseInt(row.Quantidade)||1,
+      descricao: row.Descrição||''
+    }),
+    nextIdKey: 'equipamento',
+    fbCol: 'equipamentos',
+    toastMsg: (n, d) => `Importação de equipamentos concluída! ${n} criados, ${d} duplicados ignorados.`,
+  },
+  inventario: {
+    titulo: 'Importar Inventário',
+    icone: 'ti-server',
+    cols: ['Nome','Categoria','Tipo','Marca','Modelo','Patrimônio','Série','IP','Local','Unidade','Garantia','Status','Quantidade','Observação'],
+    required: ['Nome','Patrimônio'],
+    estadoKey: 'inventario',
+    duplicateCheck: (row, existing) => existing.find(i => i.patrimonio === row.Patrimônio),
+    mapRow: (row, id) => ({
+      id, nome: row.Nome, categoria: row.Categoria||row.Tipo||'', tipo: row.Tipo||'',
+      marca: row.Marca||'', modelo: row.Modelo||'', patrimonio: row.Patrimônio,
+      serie: row['Série']||'', ip: row.IP||'', local: row.Local||'',
+      unidade: row.Unidade||'Matriz', garantia: row.Garantia||'',
+      status: row.Status||'ativo', quantidade: parseInt(row.Quantidade)||1,
+      obs: row.Observação||''
+    }),
+    nextIdKey: 'inventario',
+    fbCol: 'inventario',
+    toastMsg: (n, d) => `Importação de inventário concluída! ${n} criados, ${d} duplicados ignorados.`,
+  }
+};
+
+let _importData = null;
+let _importTipo = null;
+
+function baixarTemplateCSV(tipo) {
+  const cfg = IMPORT_CONFIG[tipo];
+  if (!cfg) return;
+  const csv = '﻿' + cfg.cols.join(';') + '\n' + cfg.cols.map(() => '').join(';');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `template-${tipo}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  toast('Template baixado! Preencha no Excel e importe.', 'info');
+}
+
+function openModalImportacao(tipo) {
+  _importTipo = tipo;
+  _importData = null;
+  const cfg = IMPORT_CONFIG[tipo];
+  openModal(`
+  <div class="modal modal-lg" style="max-width:640px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-${cfg.icone}"></i> ${cfg.titulo}</span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn btn-ghost" onclick="baixarTemplateCSV('${tipo}')" style="flex:1"><i class="ti ti-download"></i> Baixar Template CSV</button>
+      </div>
+      <div id="import-dropzone" style="border:2px dashed var(--gray-300);border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .2s" onclick="document.getElementById('import-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--primary)';this.style.background='var(--blue-bg,#eff6ff)'" ondragleave="this.style.borderColor='var(--gray-300)';this.style.background=''" ondrop="event.preventDefault();this.style.borderColor='var(--gray-300)';this.style.background='';document.getElementById('import-file').files=event.dataTransfer.files;lerCSVImportacao(event.dataTransfer.files[0])">
+        <i class="ti ti-upload" style="font-size:32px;color:var(--gray-400)"></i>
+        <p style="margin:8px 0 4px;font-weight:600;color:var(--gray-700)">Arraste o arquivo CSV aqui</p>
+        <p style="font-size:12px;color:var(--gray-400)">ou clique para selecionar</p>
+      </div>
+      <input type="file" id="import-file" accept=".csv" style="display:none" onchange="lerCSVImportacao(this.files[0])"/>
+      <div id="import-preview" style="margin-top:16px;display:none"></div>
+    </div>
+    <div class="modal-footer" id="import-footer" style="display:none">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="executarImportacao()"><i class="ti ti-check"></i> Importar Novos</button>
+    </div>
+  </div>`);
+}
+
+function lerCSVImportacao(file) {
+  if (!file) return;
+  const cfg = IMPORT_CONFIG[_importTipo];
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    let text = e.target.result;
+    if (text.charCodeAt(0) === 0xFEFF) text = text.substring(1);
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) { toast('CSV vazio ou sem dados.', 'error'); return; }
+    const headers = lines[0].split(';').map(h => h.trim().replace(/^"|"$/g, ''));
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split(';').map(v => v.trim().replace(/^"|"$/g, ''));
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
+      rows.push(obj);
+    }
+    const existing = STATE[cfg.estadoKey] || [];
+    const novos = rows.filter(r => !cfg.duplicateCheck(r, existing));
+    const dups = rows.length - novos.length;
+    _importData = { rows, novos, dups, headers };
+
+    let preview = `<div style="padding:12px;background:var(--gray-50);border-radius:8px;font-size:13px">`;
+    preview += `<div style="display:flex;gap:16px;margin-bottom:12px">`;
+    preview += `<span><strong>${rows.length}</strong> linhas no CSV</span>`;
+    preview += `<span style="color:var(--success)"><strong>${novos.length}</strong> novos</span>`;
+    if (dups > 0) preview += `<span style="color:var(--warning)"><strong>${dups}</strong> duplicados</span>`;
+    preview += `</div>`;
+    if (novos.length > 0) {
+      preview += `<div style="max-height:200px;overflow:auto;border:1px solid var(--gray-200);border-radius:6px">`;
+      preview += `<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr>`;
+      headers.forEach(h => { preview += `<th style="padding:6px 8px;background:var(--gray-100);text-align:left;white-space:nowrap">${h}</th>`; });
+      preview += `</tr></thead><tbody>`;
+      novos.slice(0, 10).forEach(r => {
+        preview += `<tr>`;
+        headers.forEach(h => { preview += `<td style="padding:4px 8px;border-top:1px solid var(--gray-100);white-space:nowrap">${r[h]||''}</td>`; });
+        preview += `</tr>`;
+      });
+      if (novos.length > 10) preview += `<tr><td colspan="${headers.length}" style="padding:6px 8px;text-align:center;color:var(--gray-400)">... mais ${novos.length - 10} linhas</td></tr>`;
+      preview += `</tbody></table></div>`;
+    }
+    preview += `</div>`;
+    document.getElementById('import-preview').innerHTML = preview;
+    document.getElementById('import-preview').style.display = 'block';
+    document.getElementById('import-dropzone').style.display = 'none';
+    document.getElementById('import-footer').style.display = 'flex';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+async function executarImportacao() {
+  if (!_importData || !_importTipo) return;
+  const cfg = IMPORT_CONFIG[_importTipo];
+  const { novos } = _importData;
+  if (novos.length === 0) { toast('Nenhum novo registro para importar.', 'warning'); return; }
+
+  let hash = null;
+  if (_importTipo === 'usuarios') hash = await hashSenha('miro26');
+
+  let criados = 0;
+  for (const row of novos) {
+    const id = STATE.nextId[cfg.nextIdKey]++;
+    const obj = cfg.mapRow(row, id, hash);
+    STATE[cfg.estadoKey].push(obj);
+    fbSave(cfg.fbCol, id, obj);
+    criados++;
+  }
+  saveState();
+  closeModal();
+  renderPage(STATE.currentPage);
+  toast(cfg.toastMsg(criados, _importData.dups), 'success');
+}
+
 
 function configuracoes() {
   return `
@@ -3257,6 +3432,22 @@ function configuracoes() {
           <button class="btn btn-ghost" onclick="exportarInventario()"><i class="ti ti-server"></i> Exportar Inventário</button>
           <button class="btn btn-ghost" onclick="exportarLicencas()"><i class="ti ti-license"></i> Exportar Licenças</button>
           <button class="btn btn-ghost" onclick="exportarEquipamentos()"><i class="ti ti-devices"></i> Exportar Equipamentos</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-user-plus"></i> Importar</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Importe novos registros a partir de arquivos CSV. Dados existentes não são substituídos.</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-ghost" onclick="openModalImportacao('usuarios')"><i class="ti ti-user-plus"></i> Usuários</button>
+          <button class="btn btn-ghost" onclick="openModalImportacao('equipamentos')"><i class="ti ti-device-laptop"></i> Equipamentos</button>
+          <button class="btn btn-ghost" onclick="openModalImportacao('inventario')"><i class="ti ti-server"></i> Inventário</button>
+        </div>
+        <div style="margin-top:12px;padding:10px;background:var(--blue-bg,#eff6ff);border-radius:6px;font-size:11px;color:var(--gray-600)">
+          <i class="ti ti-info-circle"></i>
+          <strong>Dica:</strong> Baixe o template CSV primeiro para garantir o formato correto das colunas.
         </div>
       </div>
     </div>
@@ -3379,7 +3570,25 @@ function abrirQRCode(patrimonio, nome) {
 }
 
 function imprimirQR() {
-  window.print();
+  const modal = document.querySelector('.modal-body');
+  if (!modal) { toast('Nada para imprimir.','warning'); return; }
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>QR Code — Patrimônio</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Nunito',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:white}
+    .qr-print{text-align:center;padding:20px}
+    .qr-print img{width:200px;height:200px;border:4px solid #333;border-radius:8px}
+    .qr-print .nome{font-size:16px;font-weight:800;margin-top:12px;color:#1e293b}
+    .qr-print .pat{font-size:13px;color:#64748b;margin-top:4px}
+    @media print{body{margin:0;padding:0}}
+    @page{margin:1cm;size:auto}
+  </style></head><body>
+  <div class="qr-print">${modal.innerHTML}</div>
+  </body></html>`;
+  const janela = window.open('','_blank','width=400,height=400');
+  if(!janela){ toast('Permita pop-ups para imprimir.','warning'); return; }
+  janela.document.write(html); janela.document.close();
+  janela.onload=()=>{ setTimeout(()=>{ janela.focus(); janela.print(); },500); };
 }
 
 // ===== SLA — TEMPO DE RESPOSTA =====
@@ -3408,9 +3617,9 @@ function renderSLABadge(chamado) {
 
 
 // ===== COMPRAS =====
-const STATUS_COMPRA = ['aguardando','recebido','parcial','devolvido'];
+const STATUS_COMPRA = ['Solicitado','Em cotação','Aprovado','Pedido realizado','Recebido','Cancelado'];
 const SETORES_COMPRA = ['TI', 'Secretaria', 'Coordenação', 'Direção', 'Biblioteca', 'Laboratório', 'Administrativo', 'Outro'];
-const CATS_COMPRA = ['Acessório', 'Cabo/Conectores', 'Caixa de Som', 'Computador', 'Consumível', 'Câmera', 'Impressora', 'Licença de Software', 'Microfone', 'Monitor', 'Móvel/Suporte', 'Notebook', 'Outro', 'Periférico', 'Rede (Switch/Roteador)', 'iPad/Tablet'];
+const CATS_COMPRA = ['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Monitor','Mouse','Teclado','Impressora','Roteador','Switch','Cabo/Acessório','Software/Licença','Peça de Reposição','Material de Consumo','Serviço Técnico','Outro'];
 
 function comprasPage() {
   const list = [...STATE.compras].sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
@@ -3449,10 +3658,10 @@ function comprasPage() {
     <div class="rel-table-wrap">
       <table class="table-compact">
         <thead><tr>
-          <th>#</th><th>Item / Produto</th><th>Fornecedor</th><th>Qtd</th>
-          <th>Vlr Unit.</th><th>Total</th><th>Data Compra</th>
-          <th>Nota Fiscal</th><th>Solicitante</th><th>Setor</th>
-          <th>Unidade</th><th>Status</th><th>Inv.</th><th>Ações</th>
+          <th>#</th><th>Item / Produto</th><th>Fornecedor</th><th class="col-qtd">Qtd</th>
+          <th class="col-vlr">Vlr Unit.</th><th class="col-vlr">Total</th><th class="col-data">Data Compra</th>
+          <th class="col-nf">Nota Fiscal</th><th class="col-sol">Solicitante</th><th class="col-setor">Setor</th>
+          <th class="col-unid">Unidade</th><th>Status</th><th class="col-inv">Inv.</th><th>Ações</th>
         </tr></thead>
         <tbody id="compras-tbody">
           ${renderComprasRows(list)}
@@ -3481,16 +3690,16 @@ function renderComprasRows(list) {
       ${c.categoria?`<br><span class="badge badge-reservado" style="font-size:10px;margin-top:2px">${c.categoria}</span>`:''}
     </td>
     <td style="font-size:12px">${c.fornecedor||'—'}<br><span class="text-muted" style="font-size:10px">${c.contatoFornecedor||''}</span></td>
-    <td style="text-align:center;font-weight:700">${c.quantidade||1}</td>
-    <td style="text-align:right;font-size:12px">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-    <td style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-    <td style="font-size:12px;white-space:nowrap">${formatDate(c.dataCompra)}</td>
-    <td style="font-size:11px;color:var(--gray-500)">${c.notaFiscal||'—'}</td>
-    <td style="font-size:12px">${c.solicitante||'—'}</td>
-    <td style="font-size:11px">${c.setor||'—'}</td>
-    <td style="font-size:11px">${c.unidade||'Matriz'}</td>
+    <td class="col-qtd" style="text-align:center;font-weight:700">${c.quantidade||1}</td>
+    <td class="col-vlr" style="text-align:right;font-size:12px">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+    <td class="col-vlr" style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+    <td class="col-data" style="font-size:12px;white-space:nowrap">${formatDate(c.dataCompra)}</td>
+    <td class="col-nf" style="font-size:11px;color:var(--gray-500)">${c.notaFiscal||'—'}</td>
+    <td class="col-sol" style="font-size:12px">${c.solicitante||'—'}</td>
+    <td class="col-setor" style="font-size:11px">${c.setor||'—'}</td>
+    <td class="col-unid" style="font-size:11px">${c.unidade||'Matriz'}</td>
     <td><span class="badge ${statusColors[c.status]||'badge-pendente'}" style="font-size:10px">${c.status}</span></td>
-    <td style="text-align:center">${c.adicionarInventario?'<i class="ti ti-check" style="color:var(--success);font-size:16px"></i>':'<i class="ti ti-x" style="color:var(--gray-300);font-size:14px"></i>'}</td>
+    <td class="col-inv" style="text-align:center">${c.adicionarInventario?'<i class="ti ti-check" style="color:var(--success);font-size:16px"></i>':'<i class="ti ti-x" style="color:var(--gray-300);font-size:14px"></i>'}</td>
     <td>
       <div style="display:flex;gap:2px">
         <button class="btn-icon" onclick="editCompra(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
@@ -3512,7 +3721,7 @@ function filtrarCompras() {
 }
 
 function openModalCompra(compraId=null) {
-  const c = compraId ? STATE.compras.find(c=>c.id===compraId) : null;
+  const c = compraId ? STATE.compras.find(c=>String(c.id)===String(compraId)) : null;
   openModal(`
   <div class="modal modal-lg" style="max-width:720px">
     <div class="modal-header" style="background:var(--gray-800)">
@@ -3536,7 +3745,7 @@ function openModalCompra(compraId=null) {
             <label class="required">Categoria</label>
             <select id="cp-categoria">
               <option value="">Selecione...</option>
-              ${['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Monitor','Mouse','Teclado','Impressora','Roteador','Switch','Cabo/Acessório','Software/Licença','Peça de Reposição','Material de Consumo','Serviço Técnico','Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}
+              ${CATS_COMPRA.map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -3716,8 +3925,9 @@ function salvarCompra(id) {
   };
 
   if(id) {
-    const c=STATE.compras.find(c=>c.id===id);
+    const c=STATE.compras.find(c=>String(c.id)===String(id));
     if(c) { Object.assign(c,dados); fbSave('compras',c.id,c); }
+    if(status==='Recebido'&&addInv&&c) adicionarCompraInventario(c);
     toast('Compra atualizada!');
   } else {
     const nc={id:STATE.nextId.compra++,...dados};
@@ -3731,19 +3941,22 @@ function salvarCompra(id) {
 }
 
 function adicionarCompraInventario(c) {
+  const pat=`CP-${c.id}`;
+  if(STATE.inventario.find(i=>i.patrimonio===pat)){ toast('Este item já foi adicionado ao inventário.','warning'); return; }
   const garantiaDate = c.garantiaMeses
     ? new Date(new Date(c.dataCompra+'T12:00:00').getTime()+c.garantiaMeses*30*86400000).toISOString().split('T')[0]
     : '';
   const ni={
     id:STATE.nextId.inventario++, nome:c.item,
     categoria:c.categoria||'Outro', tipo:c.categoria||'',
-    marca:'', modelo:'', patrimonio:`CP-${c.id}`,
+    marca:'', modelo:'', patrimonio:pat,
     serie:'', ip:'', local:'', unidade:c.unidade,
     garantia:garantiaDate, status:'ativo', obs:`Compra #${c.id} — ${c.fornecedor}`,
     quantidade:c.quantidade
   };
   STATE.inventario.push(ni); fbSave('inventario',ni.id,ni);
-  toast(`${c.item} adicionado ao inventário!`,'info');
+  saveState();
+  toast(`${c.item} adicionado ao inventário!`,'success');
 }
 
 function editCompra(id) { openModalCompra(id); }
@@ -3751,12 +3964,12 @@ function editCompra(id) { openModalCompra(id); }
 function deleteCompra(id) {
   if(!confirm('Excluir esta compra?')) return;
   fbDelete('compras',id);
-  STATE.compras=STATE.compras.filter(c=>c.id!==id);
+  STATE.compras=STATE.compras.filter(c=>String(c.id)!==String(id));
   saveState(); renderPage('compras'); toast('Compra excluída.','info');
 }
 
 function verCompra(id) {
-  const c=STATE.compras.find(c=>c.id===id); if(!c) return;
+  const c=STATE.compras.find(c=>String(c.id)===String(id)); if(!c) return;
   openModal(`
   <div class="modal" style="max-width:580px">
     <div class="modal-header" style="background:var(--gray-800)">
@@ -3808,8 +4021,8 @@ function verCompra(id) {
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
-      <button class="btn btn-primary" onclick="closeModal();editCompra(${c.id})"><i class="ti ti-edit"></i> Editar</button>
-      ${c.status==='Recebido'&&c.adicionarInventario?`<button class="btn btn-success" onclick="adicionarCompraInventario(STATE.compras.find(c=>c.id===${c.id}));renderPage('compras')"><i class="ti ti-server"></i> Adicionar ao Inventário</button>`:''}
+      <button class="btn btn-primary" onclick="closeModal();setTimeout(()=>editCompra(${c.id}),100)"><i class="ti ti-edit"></i> Editar</button>
+      ${c.status==='Recebido'&&c.adicionarInventario&&!STATE.inventario.find(i=>i.patrimonio===`CP-${c.id}`)?`<button class="btn btn-success" onclick="adicionarCompraInventario(STATE.compras.find(c=>String(c.id)==='${c.id}'));renderPage('compras')"><i class="ti ti-server"></i> Adicionar ao Inventário</button>`:''}
     </div>
   </div>`);
 }
@@ -3819,9 +4032,43 @@ function exportarCompras() {
 }
 
 function imprimirCompras() {
-  const conteudo = document.querySelector('.card');
-  if (!conteudo) { toast('Nada para imprimir.','warning'); return; }
-  imprimirRelatorio();
+  const tabela = document.querySelector('.table-compact');
+  if (!tabela) { toast('Nada para imprimir.','warning'); return; }
+  const estilos = Array.from(document.styleSheets).map(sheet => {
+    try { return Array.from(sheet.cssRules).map(r => r.cssText).join('\n'); } catch(e) { return ''; }
+  }).join('\n');
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>Compras TI — Escola Miró</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    body{font-family:'Nunito',sans-serif;font-size:12px;color:#1e293b;padding:16px;background:white}
+    .rel-print-header{display:flex;align-items:center;gap:16px;padding:16px 20px;background:#0073c8!important;border-radius:8px;margin-bottom:16px;color:white}
+    .rel-print-info h1{font-size:18px;font-weight:800;color:white;margin-bottom:2px}
+    .rel-print-info p{font-size:11px;color:rgba(255,255,255,.7)}
+    .rel-print-logo{background:white;border-radius:8px;padding:6px 10px;flex-shrink:0}
+    .rel-print-logo img{height:45px;object-fit:contain}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    thead th{background:#334155!important;color:white!important;padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:left}
+    tbody td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+    .badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:12px;font-size:9px;font-weight:700;text-transform:uppercase;border:1px solid transparent}
+    .badge-pendente{background:#ede9fe;color:#5b21b6;border-color:#c4b5fd}
+    .badge-aberto{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}
+    .badge-andamento{background:#fef3c7;color:#92400e;border-color:#fcd34d}
+    .badge-reservado{background:#e0f2fe;color:#0369a1;border-color:#7dd3fc}
+    .badge-fechado{background:#d1fae5;color:#065f46;border-color:#6ee7b7}
+    .badge-cancelado{background:#f3f4f6;color:#6b7280;border-color:#d1d5db}
+    .rel-print-footer{margin-top:16px;padding-top:10px;border-top:2px solid #e2e8f0;text-align:center;font-size:10px;color:#64748b}
+    .no-print,.btn,.btn-icon,.actions-menu,.filter-bar{display:none!important}
+    @page{margin:1.2cm;size:A4 landscape}
+  </style></head><body>
+  <div class="rel-print-header"><div class="rel-print-logo"><img src="logo.png" alt="Escola Miró" onerror="this.style.display='none'"></div><div class="rel-print-info"><h1>Compras de TI</h1><p>Escola Miró — Impressão: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</p></div></div>
+  ${tabela.outerHTML}
+  <div class="rel-print-footer">TI - Escola Miró — Sistema de Gestão</div>
+  </body></html>`;
+  const janela = window.open('','_blank','width=1200,height=700');
+  if(!janela){ toast('Permita pop-ups para imprimir.','warning'); return; }
+  janela.document.write(html); janela.document.close();
+  janela.onload=()=>{ setTimeout(()=>{ janela.focus(); janela.print(); },600); };
 }
 
 // ===== IMPRESSÃO ROBUSTA =====
@@ -3994,7 +4241,7 @@ async function iniciar() {
   STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
 
   // 4. Renderizar
-  window.addEventListener('beforeunload', saveLocal);
+  window.addEventListener('beforeunload', saveState);
   iniciarBackupAutomatico();
   setTimeout(() => render(), 300);
 }
@@ -4012,13 +4259,12 @@ function setupRealtimeListeners() {
     licencas:        (d) => { STATE.licencas        = d.map(l=>{ const dv=diasParaVencer(l.vencimento); if(dv<=0) l.status='expirado'; else if(dv<=30) l.status='vencendo'; return l; }); },
     acompanhamentos: (d) => { STATE.acompanhamentos = d; },
     compras:         (d) => { STATE.compras         = d; },
-    compras:         (d) => { STATE.compras         = d; },
   };
   for (const [col, setter] of Object.entries(colMap)) {
     onSnapshot(collection(db, col), (snap) => {
       if (!snap.empty) {
         setter(snap.docs.map(d => d.data()));
-        saveLocal();
+        saveState();
         // Atualizar página atual silenciosamente se estiver logado
         if (STATE.currentUser && document.getElementById('page-content')) {
           renderPage(STATE.currentPage);
@@ -4101,7 +4347,7 @@ function importarBackupJSON() {
         await fbSaveConfig();
       }
 
-      saveLocal();
+      saveState();
       renderPage(STATE.currentPage);
       toast('✅ Backup restaurado com sucesso!', 'success');
     } catch(err) {
@@ -4115,7 +4361,7 @@ function importarBackupJSON() {
 function iniciarBackupAutomatico() {
   setInterval(() => {
     if (!STATE.currentUser) return;
-    saveLocal();
+    saveState();
     // Salvar também no IndexedDB via localStorage com timestamp
     try {
       localStorage.setItem('miro_backup_auto', JSON.stringify({
@@ -4254,6 +4500,8 @@ Object.assign(window, {
   // Backup
   exportarBackupJSON, importarBackupJSON,
   // Misc
+  exportarUsuariosCSV,
+  openModalImportacao, baixarTemplateCSV, lerCSVImportacao, executarImportacao,
   STATE,
 });
 iniciar();

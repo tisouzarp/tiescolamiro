@@ -1664,15 +1664,16 @@ tbody td {
 }
 
 /* ===== ELIMINAR SCROLL HORIZONTAL NAS PÁGINAS ===== */
+html, body {
+  overflow-x: hidden;
+}
 .page-content {
   overflow-x: hidden;
 }
 
-/* Tabelas responsivas — reduzir padding em telas menores */
+/* Tabelas responsivas — sem scrollbar */
 .table-wrapper {
-  overflow-x: auto;
-  overflow-y: visible;
-  -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
 }
 
 /* Colunas de ação — largura mínima, sem quebra */
@@ -1688,11 +1689,19 @@ tbody td:last-child {
   flex-wrap: nowrap;
 }
 
-/* Tabelas com muitas colunas — fonte menor */
+/* Tabelas com muitas colunas — compactas e responsivas */
+.table-compact {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
 .table-compact th,
 .table-compact td {
-  padding: 9px 10px;
-  font-size: 12px;
+  padding: 5px 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Cards não deixam overflow vazar */
@@ -1882,8 +1891,7 @@ tbody td strong {
 /* ===== TABELAS RESPONSIVAS SEM SCROLL ===== */
 .rel-table-wrap {
   width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
 }
 
 /* Tabelas dentro de cards — colunas se adaptam */
@@ -2080,4 +2088,25 @@ tbody td strong {
 @keyframes pulse-red {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.3; }
+}
+
+/* ===== RESPONSIVIDADE — TABELA COMPRAS ===== */
+@media (max-width: 1200px) {
+  .table-compact .col-nf,
+  .table-compact .col-setor,
+  .table-compact .col-unid,
+  .table-compact .col-inv { display: none; }
+}
+@media (max-width: 992px) {
+  .table-compact .col-vlr,
+  .table-compact .col-data,
+  .table-compact .col-sol { display: none; }
+}
+@media (max-width: 768px) {
+  .table-compact .col-qtd { display: none; }
+  .table-compact { font-size: 10px; }
+  .table-compact th, .table-compact td { padding: 4px 5px; }
+  .filter-bar { flex-direction: column; align-items: stretch; }
+  .filter-bar .btn { width: 100%; }
+  .stats-grid { grid-template-columns: repeat(2,1fr) !important; }
 }
