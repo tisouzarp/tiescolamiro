@@ -3232,11 +3232,11 @@ const IMPORT_CONFIG = {
     cols: ['Nome','Nome de usuário','E-mail','Senha','Perfil','Unidade'],
     required: ['Nome','Nome de usuário','E-mail'],
     estadoKey: 'users',
-    duplicateCheck: (row, existing) => existing.find(u => u.usuario === (row['Nome de usuário']||row.login) || u.email === row['E-mail']),
+    duplicateCheck: (row, existing) => existing.find(u => u.usuario === (row['nome de usuario']||row.login) || u.email === row['e-mail']),
     mapRow: (row, id, hash) => ({
-      id, nome: row.Nome||'', email: row['E-mail']||'', usuario: row['Nome de usuário']||row.login||'',
-      senha: hash, role: row.Perfil === 'Administrador' ? 'admin' : 'usuario',
-      status: 'ativo', unidade: row.Unidade || 'Matriz', criado: dateNow()
+      id, nome: row.nome||row.name||'', email: row['e-mail']||'', usuario: row['nome de usuario']||row.login||'',
+      senha: hash, role: row.perfil === 'administrador' ? 'admin' : 'usuario',
+      status: 'ativo', unidade: row.unidade || 'Matriz', criado: dateNow()
     }),
     nextIdKey: 'usuario',
     fbCol: 'users',
@@ -3248,13 +3248,13 @@ const IMPORT_CONFIG = {
     cols: ['Nome','Tipo','Patrimônio','Marca','Modelo','Série','Local','Unidade','Status','Quantidade','Descrição'],
     required: ['Nome','Tipo','Patrimônio'],
     estadoKey: 'equipamentos',
-    duplicateCheck: (row, existing) => existing.find(e => e.patrimonio === row.Patrimônio),
+    duplicateCheck: (row, existing) => existing.find(e => e.patrimonio === row.patrimonio),
     mapRow: (row, id) => ({
-      id, nome: row.Nome, tipo: row.Tipo, patrimonio: row.Patrimônio,
-      marca: row.Marca||'', modelo: row.Modelo||'', serie: row['Série']||'',
-      local: row.Local||'', unidade: row.Unidade||'Matriz',
-      status: row.Status||'disponivel', quantidade: parseInt(row.Quantidade)||1,
-      descricao: row.Descrição||''
+      id, nome: row.nome||'', tipo: row.tipo||'', patrimonio: row.patrimonio||'',
+      marca: row.marca||'', modelo: row.modelo||'', serie: row.serie||'',
+      local: row.local||'', unidade: row.unidade||'Matriz',
+      status: row.status||'disponivel', quantidade: parseInt(row.quantidade)||1,
+      descricao: row.descricao||''
     }),
     nextIdKey: 'equipamento',
     fbCol: 'equipamentos',
@@ -3266,14 +3266,14 @@ const IMPORT_CONFIG = {
     cols: ['Nome','Categoria','Tipo','Marca','Modelo','Patrimônio','Série','IP','Local','Unidade','Garantia','Status','Quantidade','Observação'],
     required: ['Nome','Patrimônio'],
     estadoKey: 'inventario',
-    duplicateCheck: (row, existing) => existing.find(i => i.patrimonio === row.Patrimônio),
+    duplicateCheck: (row, existing) => existing.find(i => i.patrimonio === row.patrimonio),
     mapRow: (row, id) => ({
-      id, nome: row.Nome, categoria: row.Categoria||row.Tipo||'', tipo: row.Tipo||'',
-      marca: row.Marca||'', modelo: row.Modelo||'', patrimonio: row.Patrimônio,
-      serie: row['Série']||'', ip: row.IP||'', local: row.Local||'',
-      unidade: row.Unidade||'Matriz', garantia: row.Garantia||'',
-      status: row.Status||'ativo', quantidade: parseInt(row.Quantidade)||1,
-      obs: row.Observação||''
+      id, nome: row.nome||'', categoria: row.categoria||row.tipo||'', tipo: row.tipo||'',
+      marca: row.marca||'', modelo: row.modelo||'', patrimonio: row.patrimonio||'',
+      serie: row.serie||'', ip: row.ip||'', local: row.local||'',
+      unidade: row.unidade||'Matriz', garantia: row.garantia||'',
+      status: row.status||'ativo', quantidade: parseInt(row.quantidade)||1,
+      obs: row.obs||row.observacao||''
     }),
     nextIdKey: 'inventario',
     fbCol: 'inventario',
@@ -3334,10 +3334,10 @@ function lerCSVImportacao(file) {
     if (text.charCodeAt(0) === 0xFEFF) text = text.substring(1);
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (lines.length < 2) { toast('CSV vazio ou sem dados.', 'error'); return; }
-    const headers = lines[0].split(';').map(h => h.trim().replace(/^"|"$/g, ''));
+    const headers = lines[0].split(/[,;]/).map(h => h.trim().replace(/^"|"$/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase());
     const rows = [];
     for (let i = 1; i < lines.length; i++) {
-      const vals = lines[i].split(';').map(v => v.trim().replace(/^"|"$/g, ''));
+      const vals = lines[i].split(/[,;]/).map(v => v.trim().replace(/^"|"$/g, ''));
       const obj = {};
       headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
       rows.push(obj);
