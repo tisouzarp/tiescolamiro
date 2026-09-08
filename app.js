@@ -254,7 +254,7 @@ function sortByDate(list, campo='dataInicio', asc=true) {
 
 function dateNow() { return new Date().toISOString().split('T')[0]; }
 function formatDate(d) { if (!d || d === '9999-12-31') return d === '9999-12-31' ? 'Perpétua' : '-'; const [y,m,day] = d.split('-'); return `${day}/${m}/${y}`; }
-function initials(nome) { return nome.split(' ').slice(0,2).map(n=>n[0]).join('').toUpperCase(); }
+function initials(nome) { return (nome||'??').split(' ').slice(0,2).map(n=>n[0]).join('').toUpperCase(); }
 const $ = (s,c=document) => c.querySelector(s);
 const $$ = (s,c=document) => [...c.querySelectorAll(s)];
 
@@ -1363,7 +1363,7 @@ function usuarios() {
 function renderUserRows(list) {
   const q=($('#search-user')?.value||'').toLowerCase();
   const st=$('#filter-user-status')?.value||'';
-  const filtered=list.filter(u=>(!q||u.nome.toLowerCase().includes(q)||u.email.toLowerCase().includes(q)||u.usuario.toLowerCase().includes(q))&&(!st||u.status===st));
+  const filtered=list.filter(u=>(!q||(u.nome||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q)||(u.usuario||'').toLowerCase().includes(q))&&(!st||u.status===st));
   if(!filtered.length) return `<tr><td colspan="8"><div class="empty-state"><i class="ti ti-users-off"></i><h3>Nenhum usuário encontrado</h3></div></td></tr>`;
   return filtered.map(u=>`<tr>
     <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar-lg" style="background:${u.role==='admin'?'var(--primary)':'#7b1fa2'}">${initials(u.nome)}</div><div><div style="font-weight:700">${u.nome}</div></div></div></td>
@@ -3232,9 +3232,9 @@ const IMPORT_CONFIG = {
     cols: ['Nome','Nome de usuário','E-mail','Senha','Perfil','Unidade'],
     required: ['Nome','Nome de usuário','E-mail'],
     estadoKey: 'users',
-    duplicateCheck: (row, existing) => existing.find(u => u.usuario === row.login || u.email === row.email),
+    duplicateCheck: (row, existing) => existing.find(u => u.usuario === (row['Nome de usuário']||row.login) || u.email === row['E-mail']),
     mapRow: (row, id, hash) => ({
-      id, nome: row.Nome, email: row['E-mail'], usuario: row.login,
+      id, nome: row.Nome||'', email: row['E-mail']||'', usuario: row['Nome de usuário']||row.login||'',
       senha: hash, role: row.Perfil === 'Administrador' ? 'admin' : 'usuario',
       status: 'ativo', unidade: row.Unidade || 'Matriz', criado: dateNow()
     }),
@@ -4076,6 +4076,19 @@ function imprimirRelatorio() {
   const conteudo = document.getElementById('rel-content');
   if (!conteudo) { window.print(); return; }
 
+  // Converter canvas para imagens antes de copiar
+  const tempDiv = conteudo.cloneNode(true);
+  const origCanvas = conteudo.querySelectorAll('canvas');
+  const cloneCanvas = tempDiv.querySelectorAll('canvas');
+  cloneCanvas.forEach((cv, i) => {
+    try {
+      const img = document.createElement('img');
+      img.src = origCanvas[i].toDataURL('image/png');
+      img.style.cssText = 'width:100%;max-height:180px;display:block';
+      cv.parentNode.replaceChild(img, cv);
+    } catch(e) {}
+  });
+
   // Capturar CSS do documento atual
   const estilos = Array.from(document.styleSheets).map(sheet => {
     try {
@@ -4172,7 +4185,7 @@ function imprimirRelatorio() {
   </style>
 </head>
 <body>
-  ${conteudo.innerHTML}
+  ${tempDiv.innerHTML}
 </body>
 </html>`;
 
