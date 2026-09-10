@@ -21,9 +21,9 @@
       return false;
     };
     window.addEventListener('unhandledrejection', function(e) {
-      document.getElementById('app').innerHTML =
-        '<div style="padding:30px;background:#fef3c7;border:2px solid orange;margin:20px;border-radius:8px;font-family:monospace">' +
-        '<h2>⚠️ Erro de Promise</h2><pre>' + e.reason + '</pre></div>';
+      var msg = String(e.reason || '');
+      if (msg.indexOf('MetaMask') !== -1 || msg.indexOf('ethereum') !== -1 || msg.indexOf('wallet') !== -1) return;
+      console.error('Unhandled rejection:', e.reason);
     });
   </script>
 </head>

@@ -11,11 +11,9 @@ window.onerror = function(msg, src, line, col, err) {
   return false;
 };
 window.addEventListener('unhandledrejection', function(e) {
-  document.getElementById('app').innerHTML = `
-    <div style="padding:40px;font-family:monospace;background:#fee;border:2px solid red;margin:20px;border-radius:8px">
-      <h2 style="color:red">❌ Erro de Promise não capturada</h2>
-      <pre style="background:#fff;padding:10px;overflow:auto">${e.reason}</pre>
-    </div>`;
+  const msg = String(e.reason || '');
+  if (msg.includes('MetaMask') || msg.includes('ethereum') || msg.includes('wallet')) return;
+  console.error('Unhandled rejection:', e.reason);
 });
 
 /* ============================================================
@@ -2584,7 +2582,7 @@ function openModalChamado(chamadoId=null, unidadeFixa=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Categoria</label>
-          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Canvas', 'Celular', 'Computador Sala', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Notebook', 'Nuvem', 'Office', 'Office 365', 'Rede', 'Reunião', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'iPad', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
+          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Canvas', 'Celular', 'Computador Sala', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Notebook', 'Nuvem', 'Office', 'Office 365', 'Projetor', 'Rede', 'Reunião', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'iPad', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
         </div>
         <div class="form-group">
           <label class="required">Prioridade</label>
