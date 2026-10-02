@@ -33,7 +33,7 @@ const FIREBASE_CONFIG = {
 };
 
 // Coleções do Firestore
-const COLECOES = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','notifications','config'];
+const COLECOES = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','notifications','config','compras','fornecedores'];
 
 // Firebase SDK via CDN (carregado no index.html)
 let db = null;   // Firestore instance
@@ -94,7 +94,7 @@ async function fbDelete(colecao, id) {
 async function fbLoadAll() {
   if (!DB_READY) return false;
   try {
-    const cols = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','compras'];
+    const cols = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','compras','fornecedores'];
     for (const col of cols) {
       const snap = await db.collection(col).get();
       if (!snap.empty) {
@@ -107,6 +107,7 @@ async function fbLoadAll() {
         if (col === 'licencas')        STATE.licencas        = dados;
         if (col === 'acompanhamentos') STATE.acompanhamentos = dados;
         if (col === 'compras')         STATE.compras         = dados;
+        if (col === 'fornecedores')    STATE.fornecedores    = dados;
       }
     }
     const cfgSnap = await db.collection('config').get();
@@ -234,9 +235,10 @@ const STATE = {
     { id: 2, nome: 'Adobe Creative Cloud', fornecedor: 'Adobe', tipo: 'Desktop', quantidade: 5, chave: 'ADOBE-XXXXX', dataCompra: '2024-03-01', vencimento: '2025-06-15', valor: 1800.00, status: 'vencendo', unidade: 'Matriz', obs: 'Laboratório de artes' },
     { id: 3, nome: 'Windows 11 Pro', fornecedor: 'Microsoft', tipo: 'OEM', quantidade: 20, chave: 'WIN11-XXXXX', dataCompra: '2023-06-01', vencimento: '9999-12-31', valor: 8000.00, status: 'ativo', unidade: 'Ensino Médio', obs: 'Licenças perpétuas' },
   ],
-  nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1, compra: 1 },
+  nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1, compra: 1, fornecedor: 1 },
   acompanhamentos: [], // { id, chamadoId, texto, autor, tipo, criado }
-  compras: [], // { id, item, categoria, descricao, fornecedor, contatoFornecedor, quantidade, valorUnitario, valorTotal, dataCompra, notaFiscal, dataEntrega, status, link, solicitante, setor, unidade, aprovadoPor, obs, garantiaMeses, adicionarInventario, criado }
+  compras: [], // { id, item, categoria, descricao, fornecedor, contatoFornecedor, quantidade, valorUnitario, valorTotal, dataCompra, notaFiscal, dataEntrega, status, link, solicitante, setor, unidade, aprovadoPor, obs, garantiaMeses, adicionarInventario, criado, +opcionais: fornecedorId, formaPagamento, parcelas, descontoPercent, descontoValor }
+  fornecedores: [], // { id, nome, contato, telefone, email, observacao, ativo, criado }
   filtros: { reserva: '', chamado: '', chamadoPrio: '', reservaSearch: '', chamadoSearch: '' },
   sla: { Alta: 2, Media: 8, Baixa: 24 }, // horas de SLA por prioridade
 };
@@ -294,7 +296,8 @@ function saveState() {
       equipamentos:STATE.equipamentos, users:STATE.users,
       inventario:STATE.inventario, licencas:STATE.licencas,
       nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30),
-      acompanhamentos:STATE.acompanhamentos, compras:(STATE.compras||[])
+      acompanhamentos:STATE.acompanhamentos, compras:(STATE.compras||[]),
+      fornecedores:(STATE.fornecedores||[])
     }));
     if (STATE.currentUser)
       localStorage.setItem('miro_ti_session', JSON.stringify({ userId: STATE.currentUser.id, page: STATE.currentPage }));
@@ -305,7 +308,7 @@ function saveState() {
 function loadState() {
   try {
     const s = localStorage.getItem('miro_ti_v2');
-    if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications','acompanhamentos','compras'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
+    if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications','acompanhamentos','compras','fornecedores'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
     const sess = localStorage.getItem('miro_ti_session');
     if (sess) {
       const { userId, page } = JSON.parse(sess);
@@ -3615,14 +3618,15 @@ function renderSLABadge(chamado) {
 
 
 // ===== COMPRAS =====
-const STATUS_COMPRA = ['Solicitado','Em cotação','Aprovado','Pedido realizado','Recebido','Cancelado'];
+const STATUS_COMPRA = ['Solicitado','Em cotação','Aprovado','Pedido realizado','Recebido','Entregue','Cancelado'];
+const PAGAMENTOS_COMPRA = ['Pix','Dinheiro','Boleto','DDA','Cartão'];
 const SETORES_COMPRA = ['TI', 'Secretaria', 'Coordenação', 'Direção', 'Biblioteca', 'Laboratório', 'Administrativo', 'Outro'];
 const CATS_COMPRA = ['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Monitor','Mouse','Teclado','Impressora','Roteador','Switch','Cabo/Acessório','Software/Licença','Peça de Reposição','Material de Consumo','Serviço Técnico','Outro'];
 
 function comprasPage() {
   const list = [...STATE.compras].sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
   const totalGasto = STATE.compras.reduce((a,c)=>a+(c.valorTotal||0),0);
-  const pendentes  = STATE.compras.filter(c=>!['Recebido','Cancelado'].includes(c.status)).length;
+  const pendentes  = STATE.compras.filter(c=>!['Recebido','Entregue','Cancelado'].includes(c.status)).length;
   const recebidos  = STATE.compras.filter(c=>c.status==='Recebido').length;
 
   return `
@@ -3644,7 +3648,11 @@ function comprasPage() {
       <option value="Matriz">Matriz</option>
       <option value="Ensino Médio">Ensino Médio</option>
     </select>
+    <input type="date" class="filter-select" id="filter-compra-de" title="Data inicial" onchange="filtrarCompras()" style="max-width:150px"/>
+    <input type="date" class="filter-select" id="filter-compra-ate" title="Data final" onchange="filtrarCompras()" style="max-width:150px"/>
+    <button class="btn btn-ghost" onclick="limparFiltrosCompras()" title="Limpar filtros"><i class="ti ti-x"></i> Limpar</button>
     <button class="btn btn-primary" onclick="openModalCompra()"><i class="ti ti-plus"></i> Nova Compra</button>
+    <button class="btn btn-ghost" onclick="openModalFornecedores()"><i class="ti ti-building-store"></i> Fornecedores</button>
     <button class="btn btn-ghost" onclick="exportarCompras()"><i class="ti ti-download"></i> Exportar</button>
     <button class="btn btn-ghost" onclick="imprimirCompras()"><i class="ti ti-printer"></i> Imprimir</button>
   </div>
@@ -3659,7 +3667,7 @@ function comprasPage() {
           <th>#</th><th>Item / Produto</th><th>Fornecedor</th><th class="col-qtd">Qtd</th>
           <th class="col-vlr">Vlr Unit.</th><th class="col-vlr">Total</th><th class="col-data">Data Compra</th>
           <th class="col-nf">Nota Fiscal</th><th class="col-sol">Solicitante</th><th class="col-setor">Setor</th>
-          <th class="col-unid">Unidade</th><th>Status</th><th class="col-inv">Inv.</th><th>Ações</th>
+          <th class="col-unid">Unidade</th><th class="col-pagto">Pagto</th><th>Status</th><th class="col-inv">Inv.</th><th class="col-acoes">Ações</th>
         </tr></thead>
         <tbody id="compras-tbody">
           ${renderComprasRows(list)}
@@ -3668,7 +3676,7 @@ function comprasPage() {
           <tr style="background:var(--gray-50)">
             <td colspan="5" style="padding:10px 12px;font-weight:700;font-size:13px">TOTAL GERAL</td>
             <td style="padding:10px 12px;font-weight:800;color:var(--primary);font-size:14px">R$ ${totalGasto.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-            <td colspan="8"></td>
+            <td colspan="9"></td>
           </tr>
         </tfoot>`:''}
       </table>
@@ -3677,8 +3685,8 @@ function comprasPage() {
 }
 
 function renderComprasRows(list) {
-  if (!list.length) return `<tr><td colspan="14"><div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div></td></tr>`;
-  const statusColors = { 'Solicitado':'badge-pendente', 'Em cotação':'badge-andamento', 'Aprovado':'badge-reservado', 'Pedido realizado':'badge-aberto', 'Recebido':'badge-fechado', 'Cancelado':'badge-cancelado' };
+  if (!list.length) return `<tr><td colspan="15"><div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div></td></tr>`;
+  const statusColors = { 'Solicitado':'badge-pendente', 'Em cotação':'badge-andamento', 'Aprovado':'badge-reservado', 'Pedido realizado':'badge-aberto', 'Recebido':'badge-fechado', 'Entregue':'badge-ativo', 'Cancelado':'badge-cancelado' };
   return list.map(c=>`
   <tr>
     <td><strong style="color:var(--primary)">#${c.id}</strong></td>
@@ -3689,16 +3697,17 @@ function renderComprasRows(list) {
     </td>
     <td style="font-size:12px">${c.fornecedor||'—'}<br><span class="text-muted" style="font-size:10px">${c.contatoFornecedor||''}</span></td>
     <td class="col-qtd" style="text-align:center;font-weight:700">${c.quantidade||1}</td>
-    <td class="col-vlr" style="text-align:right;font-size:12px">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-    <td class="col-vlr" style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+    <td class="col-vlr num" style="text-align:right">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+    <td class="col-vlr num" style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}${(c.descontoValor||0)>0?`<br><span style="font-size:10px;font-weight:600;color:var(--success)">desc R$ ${c.descontoValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>`:''}</td>
     <td class="col-data" style="font-size:12px;white-space:nowrap">${formatDate(c.dataCompra)}</td>
     <td class="col-nf" style="font-size:11px;color:var(--gray-500)">${c.notaFiscal||'—'}</td>
     <td class="col-sol" style="font-size:12px">${c.solicitante||'—'}</td>
     <td class="col-setor" style="font-size:11px">${c.setor||'—'}</td>
     <td class="col-unid" style="font-size:11px">${c.unidade||'Matriz'}</td>
+    <td class="col-pagto" style="font-size:11px;white-space:nowrap">${c.formaPagamento?`${c.formaPagamento}${(c.parcelas||0)>1?` ${(c.parcelas)}x`:''}`:'—'}</td>
     <td><span class="badge ${statusColors[c.status]||'badge-pendente'}" style="font-size:10px">${c.status}</span></td>
     <td class="col-inv" style="text-align:center">${c.adicionarInventario?'<i class="ti ti-check" style="color:var(--success);font-size:16px"></i>':'<i class="ti ti-x" style="color:var(--gray-300);font-size:14px"></i>'}</td>
-    <td>
+    <td class="col-acoes">
       <div style="display:flex;gap:2px">
         <button class="btn-icon" onclick="editCompra(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
         <button class="btn-icon" onclick="verCompra(${c.id})" title="Detalhes" style="color:var(--primary)"><i class="ti ti-eye"></i></button>
@@ -3712,10 +3721,21 @@ function filtrarCompras() {
   const q    = ($('#search-compra')?.value||'').toLowerCase();
   const st   = $('#filter-compra-status')?.value||'';
   const uni  = $('#filter-compra-uni')?.value||'';
+  const de   = $('#filter-compra-de')?.value||'';
+  const ate  = $('#filter-compra-ate')?.value||'';
   const list = [...STATE.compras]
-    .filter(c=>(!q||c.item?.toLowerCase().includes(q)||c.fornecedor?.toLowerCase().includes(q)||c.solicitante?.toLowerCase().includes(q))&&(!st||c.status===st)&&(!uni||(c.unidade||'Matriz')===uni))
+    .filter(c=>(!q||c.item?.toLowerCase().includes(q)||c.fornecedor?.toLowerCase().includes(q)||c.solicitante?.toLowerCase().includes(q))&&(!st||c.status===st)&&(!uni||(c.unidade||'Matriz')===uni)&&(!de||(c.dataCompra||'')>=de)&&(!ate||(c.dataCompra||'')<=ate))
     .sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
   const tb=$('#compras-tbody'); if(tb) tb.innerHTML=renderComprasRows(list);
+}
+
+function limparFiltrosCompras() {
+  const s=$('#search-compra'); if(s) s.value='';
+  const st=$('#filter-compra-status'); if(st) st.value='';
+  const u=$('#filter-compra-uni'); if(u) u.value='';
+  const de=$('#filter-compra-de'); if(de) de.value='';
+  const ate=$('#filter-compra-ate'); if(ate) ate.value='';
+  filtrarCompras();
 }
 
 function openModalCompra(compraId=null) {
@@ -3765,15 +3785,28 @@ function openModalCompra(compraId=null) {
             <input type="number" id="cp-vlrunit" min="0" step="0.01" placeholder="0,00" value="${c?.valorUnitario||''}" oninput="calcTotalCompra()"/>
           </div>
           <div class="form-group">
-            <label>Valor Total (R$)</label>
-            <input type="number" id="cp-vlrtotal" min="0" step="0.01" placeholder="Calculado auto" value="${c?.valorTotal||''}" style="background:var(--gray-50)"/>
+            <label>Desconto (%)</label>
+            <input type="number" id="cp-descperc" min="0" max="100" step="0.01" placeholder="0" value="${c?.descontoPercent||''}" oninput="calcTotalCompra()"/>
           </div>
         </div>
+        <div class="cp-totais" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px">
+          <div style="background:var(--gray-50);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--gray-500);text-transform:uppercase">Subtotal</div><div id="cp-subtotal" style="font-size:15px;font-weight:800">R$ 0,00</div></div>
+          <div style="background:#f0fdf4;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--success);text-transform:uppercase">Desconto (R$)</div><div id="cp-descval" style="font-size:15px;font-weight:800;color:var(--success)">R$ 0,00</div></div>
+          <div style="background:var(--primary-light);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase">Valor Final</div><div id="cp-final" style="font-size:15px;font-weight:800;color:var(--primary)">R$ 0,00</div></div>
+        </div>
+        <input type="hidden" id="cp-vlrtotal" value="${c?.valorTotal||''}"/>
       </div>
 
       <!-- FORNECEDOR -->
       <div style="background:#f0fdf4;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--success)">
         <div style="font-size:11px;font-weight:700;color:var(--success);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-building-store"></i> Fornecedor</div>
+        <div class="form-group">
+          <label>Fornecedor Cadastrado (opcional)</label>
+          <select id="cp-fornecedor-id" onchange="preencherFornecedorCompra()">
+            <option value="">Digitar manualmente abaixo...</option>
+            ${(STATE.fornecedores||[]).filter(f=>f.ativo!==false).map(f=>`<option value="${f.id}" ${String(c?.fornecedorId)===String(f.id)?'selected':''}>${f.nome}</option>`).join('')}
+          </select>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label class="required">Nome do Fornecedor</label>
@@ -3782,6 +3815,24 @@ function openModalCompra(compraId=null) {
           <div class="form-group">
             <label>Contato / Site / CNPJ</label>
             <input type="text" id="cp-contato" placeholder="site.com.br ou (11) 99999-9999" value="${c?.contatoFornecedor||''}"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGAMENTO -->
+      <div style="background:#eff6ff;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--accent)">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-credit-card"></i> Pagamento</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Forma de Pagamento</label>
+            <select id="cp-pagamento">
+              <option value="">Não informado</option>
+              ${PAGAMENTOS_COMPRA.map(p=>`<option ${c?.formaPagamento===p?'selected':''}>${p}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Parcelas</label>
+            <input type="number" id="cp-parcelas" min="1" step="1" placeholder="1" value="${c?.parcelas||1}"/>
           </div>
         </div>
       </div>
@@ -3880,6 +3931,19 @@ function openModalCompra(compraId=null) {
       </button>
     </div>
   </div>`);
+  const semDesconto = !!(c&&!(c.descontoPercent||c.descontoValor));
+  setTimeout(()=>inicializarTotaisCompra(semDesconto,(c&&c.valorTotal)||0), 50);
+}
+
+function inicializarTotaisCompra(preservar, valorSalvo) {
+  if(!preservar) { calcTotalCompra(); return; }
+  // Compra antiga sem desconto: exibe subtotal calculado mas mantém o total salvo
+  const qtd=parseFloat($('#cp-qtd')?.value)||0;
+  const unit=parseFloat($('#cp-vlrunit')?.value)||0;
+  const fmt=v=>'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const elS=$('#cp-subtotal'); if(elS) elS.textContent=fmt(qtd*unit);
+  const elD=$('#cp-descval'); if(elD) elD.textContent=fmt(0);
+  const elF=$('#cp-final'); if(elF) elF.textContent=fmt(valorSalvo);
 }
 
 function changeQtyCp(d) {
@@ -3888,7 +3952,25 @@ function changeQtyCp(d) {
 function calcTotalCompra() {
   const qtd=parseFloat($('#cp-qtd')?.value)||0;
   const unit=parseFloat($('#cp-vlrunit')?.value)||0;
-  const total=$('#cp-vlrtotal'); if(total) total.value=(qtd*unit).toFixed(2);
+  let desc=parseFloat($('#cp-descperc')?.value)||0;
+  if(desc<0) desc=0; if(desc>100) desc=100;
+  const subtotal=qtd*unit;
+  const descVal=subtotal*desc/100;
+  const final=Math.max(0,subtotal-descVal);
+  const fmt=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const elS=$('#cp-subtotal'); if(elS) elS.textContent=fmt(subtotal);
+  const elD=$('#cp-descval'); if(elD) elD.textContent=fmt(descVal);
+  const elF=$('#cp-final'); if(elF) elF.textContent=fmt(final);
+  const total=$('#cp-vlrtotal'); if(total) total.value=final.toFixed(2);
+}
+
+function preencherFornecedorCompra() {
+  const id=$('#cp-fornecedor-id')?.value||'';
+  if(!id) return;
+  const f=(STATE.fornecedores||[]).find(f=>String(f.id)===String(id));
+  if(!f) return;
+  const n=$('#cp-fornecedor'); if(n && !n.value.trim()) n.value=f.nome||'';
+  const ct=$('#cp-contato'); if(ct && !ct.value.trim()) ct.value=f.contato||f.telefone||f.email||'';
 }
 
 function salvarCompra(id) {
@@ -3902,7 +3984,21 @@ function salvarCompra(id) {
   }
   const qtd=parseInt($('#cp-qtd')?.value)||1;
   const vlrUnit=parseFloat($('#cp-vlrunit')?.value)||0;
-  const vlrTotal=parseFloat($('#cp-vlrtotal')?.value)||(qtd*vlrUnit);
+  let descPerc=parseFloat($('#cp-descperc')?.value)||0;
+  if(isNaN(descPerc)) descPerc=0;
+  if(descPerc<0||descPerc>100){ toast('Desconto deve estar entre 0 e 100%.','error'); return; }
+  const parcRaw=$('#cp-parcelas')?.value;
+  let parc=(parcRaw===''||parcRaw==null)?1:parseInt(parcRaw);
+  if(isNaN(parc)||parc<1){ toast('Parcelas deve ser um número inteiro maior que zero.','error'); return; }
+  const formaPag=$('#cp-pagamento')?.value||'';
+  if(formaPag && !PAGAMENTOS_COMPRA.includes(formaPag)){ toast('Forma de pagamento inválida.','error'); return; }
+  const subtotal=qtd*vlrUnit;
+  const descVal=subtotal*descPerc/100;
+  let vlrTotal=parseFloat(($('#cp-vlrtotal')?.value)||'') ;
+  if(isNaN(vlrTotal)) vlrTotal=Math.max(0,subtotal-descVal);
+  if(vlrTotal<0){ toast('Valor final não pode ser negativo.','error'); return; }
+  vlrTotal=Math.round(vlrTotal*100)/100;
+  const fornId=$('#cp-fornecedor-id')?.value||'';
   const addInv=$('#cp-inventario')?.checked;
   const status=$('#cp-status')?.value||'Solicitado';
   const garantiaMeses=parseInt($('#cp-garantia')?.value)||0;
@@ -3911,7 +4007,10 @@ function salvarCompra(id) {
     item, categoria:$('#cp-categoria')?.value||'',
     descricao:$('#cp-descricao')?.value||'',
     fornecedor, contatoFornecedor:$('#cp-contato')?.value||'',
+    fornecedorId: fornId||'',
+    formaPagamento: formaPag, parcelas: parc,
     quantidade:qtd, valorUnitario:vlrUnit, valorTotal:vlrTotal,
+    descontoPercent: descPerc, descontoValor: Math.round(descVal*100)/100,
     dataCompra:data, notaFiscal:$('#cp-nf')?.value||'',
     dataEntrega:$('#cp-entrega')?.value||'', status,
     link:$('#cp-link')?.value||'',
@@ -4006,6 +4105,9 @@ function verCompra(id) {
           ['Unidade', c.unidade||'Matriz', 'ti-map-pin'],
           ['Garantia', c.garantiaMeses?c.garantiaMeses+' meses':'—', 'ti-shield-check'],
           ['Status', c.status, 'ti-circle'],
+          ['Pagamento', c.formaPagamento||'—', 'ti-credit-card'],
+          ['Parcelas', c.parcelas?c.parcelas+'x':'—', 'ti-calendar'],
+          ['Desconto', (c.descontoPercent||0)>0?`${c.descontoPercent}% (R$ ${(c.descontoValor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})})`:'—', 'ti-discount'],
           ['Inventário', c.adicionarInventario?'Sim — será adicionado':'Não', 'ti-server'],
         ].map(([l,v,ic])=>`
         <div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--gray-100)">
@@ -4025,6 +4127,88 @@ function verCompra(id) {
   </div>`);
 }
 
+// ===== FORNECEDORES =====
+function openModalFornecedores() {
+  const list=[...(STATE.fornecedores||[])].sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  openModal(`
+  <div class="modal modal-lg" style="max-width:640px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-building-store" style="color:#60a5fa"></i> Fornecedores (${list.length})</span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <button class="btn btn-primary" onclick="openModalFornecedor()" style="margin-bottom:12px"><i class="ti ti-plus"></i> Novo Fornecedor</button>
+      ${!list.length?'<p class="text-muted" style="font-size:13px">Nenhum fornecedor cadastrado.</p>':`
+      <div class="table-wrapper"><table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead><tr><th style="text-align:left;padding:6px 8px">Nome</th><th style="text-align:left;padding:6px 8px">Contato</th><th style="text-align:left;padding:6px 8px">Status</th><th style="padding:6px 8px">Ações</th></tr></thead>
+        <tbody>${list.map(f=>`
+          <tr style="border-top:1px solid var(--gray-100)">
+            <td style="padding:6px 8px"><strong>${f.nome||'—'}</strong><br><span class="text-muted" style="font-size:11px">${f.email||''}</span></td>
+            <td style="padding:6px 8px;font-size:11px">${f.contato||'—'}${f.telefone?`<br>${f.telefone}`:''}</td>
+            <td style="padding:6px 8px"><span class="badge ${f.ativo!==false?'badge-fechado':'badge-suspenso'}" style="font-size:10px">${f.ativo!==false?'Ativo':'Inativo'}</span></td>
+            <td style="padding:6px 8px"><div style="display:flex;gap:2px;justify-content:center">
+              <button class="btn-icon" onclick="openModalFornecedor(${f.id})" title="Editar"><i class="ti ti-edit"></i></button>
+              <button class="btn-icon" onclick="toggleFornecedor(${f.id})" title="${f.ativo!==false?'Inativar':'Ativar'}" style="color:${f.ativo!==false?'var(--warning)':'var(--success)'}"><i class="ti ti-${f.ativo!==false?'ban':'refresh'}"></i></button>
+            </div></td>
+          </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+    <div class="modal-footer" style="background:var(--gray-50)">
+      <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+    </div>
+  </div>`);
+}
+
+function openModalFornecedor(id=null) {
+  const f=id?(STATE.fornecedores||[]).find(f=>String(f.id)===String(id)):null;
+  openModal(`
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-building-store" style="color:#60a5fa"></i> ${f?'Editar Fornecedor':'Novo Fornecedor'}</span>
+      <button class="btn-icon" onclick="openModalFornecedores()" style="color:white"><i class="ti ti-arrow-left"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label class="required">Nome</label><input type="text" id="forn-nome" placeholder="Ex: Dell, Kabum..." value="${f?.nome||''}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Contato / Site / CNPJ</label><input type="text" id="forn-contato" value="${f?.contato||''}"/></div>
+        <div class="form-group"><label>Telefone</label><input type="text" id="forn-tel" value="${f?.telefone||''}"/></div>
+      </div>
+      <div class="form-group"><label>E-mail</label><input type="email" id="forn-email" value="${f?.email||''}"/></div>
+      <div class="form-group"><label>Observação</label><textarea id="forn-obs" rows="2">${f?.obs||f?.observacao||''}</textarea></div>
+    </div>
+    <div class="modal-footer" style="background:var(--gray-50)">
+      <button class="btn btn-ghost" onclick="openModalFornecedores()">Voltar</button>
+      <button class="btn btn-primary" onclick="salvarFornecedor(${id||'null'})"><i class="ti ti-check"></i> Salvar</button>
+    </div>
+  </div>`);
+}
+
+function salvarFornecedor(id) {
+  const nome=$('#forn-nome')?.value.trim();
+  if(!nome){ toast('Informe o nome do fornecedor.','error'); return; }
+  const dados={ nome, contato:$('#forn-contato')?.value.trim()||'', telefone:$('#forn-tel')?.value.trim()||'',
+    email:$('#forn-email')?.value.trim()||'', observacao:$('#forn-obs')?.value.trim()||'' };
+  if(id) {
+    const f=(STATE.fornecedores||[]).find(f=>String(f.id)===String(id));
+    if(f){ Object.assign(f,dados); fbSave('fornecedores',f.id,f); }
+    toast('Fornecedor atualizado!');
+  } else {
+    if(!STATE.nextId.fornecedor) STATE.nextId.fornecedor=1;
+    const nf={id:STATE.nextId.fornecedor++,...dados,ativo:true,criado:dateNow()};
+    STATE.fornecedores.push(nf); fbSave('fornecedores',nf.id,nf); fbSaveConfig();
+    toast('Fornecedor cadastrado!');
+  }
+  saveState(); openModalFornecedores();
+}
+
+function toggleFornecedor(id) {
+  const f=(STATE.fornecedores||[]).find(f=>String(f.id)===String(id));
+  if(!f) return;
+  f.ativo=(f.ativo===false)?true:false;
+  fbSave('fornecedores',f.id,f); saveState(); openModalFornecedores();
+  toast(f.ativo?'Fornecedor ativado.':'Fornecedor inativado.','info');
+}
+
 function exportarCompras() {
   exportarCSV(STATE.compras,'compras-ti-miro');
 }
@@ -4032,6 +4216,13 @@ function exportarCompras() {
 function imprimirCompras() {
   const tabela = document.querySelector('.table-compact');
   if (!tabela) { toast('Nada para imprimir.','warning'); return; }
+  const fBusca=$('#search-compra')?.value||'';
+  const fStatus=$('#filter-compra-status')?.value||'Todos';
+  const fUni=$('#filter-compra-uni')?.value||'Todas';
+  const fDe=$('#filter-compra-de')?.value||'';
+  const fAte=$('#filter-compra-ate')?.value||'';
+  const periodo=(fDe||fAte)?` · Período: ${fDe?formatDate(fDe):'...'} a ${fAte?formatDate(fAte):'...'}`:'';
+  const resumo=`Filtros — Busca: ${fBusca||'—'} · Status: ${fStatus} · Unidade: ${fUni}${periodo}`;
   const estilos = Array.from(document.styleSheets).map(sheet => {
     try { return Array.from(sheet.cssRules).map(r => r.cssText).join('\n'); } catch(e) { return ''; }
   }).join('\n');
@@ -4045,21 +4236,28 @@ function imprimirCompras() {
     .rel-print-info p{font-size:11px;color:rgba(255,255,255,.7)}
     .rel-print-logo{background:white;border-radius:8px;padding:6px 10px;flex-shrink:0}
     .rel-print-logo img{height:45px;object-fit:contain}
-    table{width:100%;border-collapse:collapse;font-size:10px}
-    thead th{background:#334155!important;color:white!important;padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:left}
+    table{width:100%;border-collapse:collapse;font-size:10px;table-layout:auto}
+    thead{display:table-header-group}
+    thead th{background:#334155!important;color:white!important;padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:left;white-space:nowrap}
     tbody td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+    tbody tr{page-break-inside:avoid}
+    td.num,th.col-vlr{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+    .col-acoes{display:none!important}
+    .print-filtros{font-size:10px;color:#475569;margin-bottom:10px}
     .badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:12px;font-size:9px;font-weight:700;text-transform:uppercase;border:1px solid transparent}
     .badge-pendente{background:#ede9fe;color:#5b21b6;border-color:#c4b5fd}
     .badge-aberto{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}
     .badge-andamento{background:#fef3c7;color:#92400e;border-color:#fcd34d}
     .badge-reservado{background:#e0f2fe;color:#0369a1;border-color:#7dd3fc}
     .badge-fechado{background:#d1fae5;color:#065f46;border-color:#6ee7b7}
+    .badge-ativo{background:#d1fae5;color:#065f46;border-color:#6ee7b7}
     .badge-cancelado{background:#f3f4f6;color:#6b7280;border-color:#d1d5db}
     .rel-print-footer{margin-top:16px;padding-top:10px;border-top:2px solid #e2e8f0;text-align:center;font-size:10px;color:#64748b}
     .no-print,.btn,.btn-icon,.actions-menu,.filter-bar{display:none!important}
     @page{margin:1.2cm;size:A4 landscape}
   </style></head><body>
   <div class="rel-print-header"><div class="rel-print-logo"><img src="logo.png" alt="Escola Miró" onerror="this.style.display='none'"></div><div class="rel-print-info"><h1>Compras de TI</h1><p>Escola Miró — Impressão: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</p></div></div>
+  <div class="print-filtros">${resumo}</div>
   ${tabela.outerHTML}
   <div class="rel-print-footer">TI - Escola Miró — Sistema de Gestão</div>
   </body></html>`;
@@ -4270,6 +4468,7 @@ function setupRealtimeListeners() {
     licencas:        (d) => { STATE.licencas        = d.map(l=>{ const dv=diasParaVencer(l.vencimento); if(dv<=0) l.status='expirado'; else if(dv<=30) l.status='vencendo'; return l; }); },
     acompanhamentos: (d) => { STATE.acompanhamentos = d; },
     compras:         (d) => { STATE.compras         = d; },
+    fornecedores:    (d) => { STATE.fornecedores    = d; },
   };
   for (const [col, setter] of Object.entries(colMap)) {
     onSnapshot(collection(db, col), (snap) => {
@@ -4299,6 +4498,7 @@ function exportarBackupJSON() {
     licencas:        STATE.licencas,
     acompanhamentos: STATE.acompanhamentos,
     compras:         STATE.compras || [],
+    fornecedores:    STATE.fornecedores || [],
     nextId:          STATE.nextId,
   };
   const json = JSON.stringify(dados, null, 2);
@@ -4338,6 +4538,7 @@ function importarBackupJSON() {
       if (dados.licencas)        STATE.licencas        = dados.licencas;
       if (dados.acompanhamentos) STATE.acompanhamentos = dados.acompanhamentos;
       if (dados.compras)         STATE.compras         = dados.compras;
+      if (dados.fornecedores)    STATE.fornecedores    = dados.fornecedores;
       if (dados.nextId)          STATE.nextId          = dados.nextId;
 
       // Enviar tudo para o Firebase
@@ -4348,6 +4549,7 @@ function importarBackupJSON() {
           reservas: STATE.reservas, chamados: STATE.chamados,
           inventario: STATE.inventario, licencas: STATE.licencas,
           acompanhamentos: STATE.acompanhamentos, compras: STATE.compras,
+          fornecedores: STATE.fornecedores || [],
         };
         for (const [col, lista] of Object.entries(cols)) {
           for (const item of lista) {
@@ -4385,6 +4587,7 @@ function iniciarBackupAutomatico() {
         licencas: STATE.licencas,
         acompanhamentos: STATE.acompanhamentos,
         compras: STATE.compras || [],
+        fornecedores: STATE.fornecedores || [],
         nextId: STATE.nextId,
       }));
     } catch(e) {}
@@ -4507,7 +4710,9 @@ Object.assign(window, {
   // Compras
   comprasPage, openModalCompra, editCompra, deleteCompra,
   verCompra, salvarCompra, adicionarItemCompra, removerItemCompra,
-  calcularTotalCompra, filtrarCompras,
+  calcularTotalCompra, filtrarCompras, limparFiltrosCompras,
+  openModalFornecedores, openModalFornecedor, salvarFornecedor, toggleFornecedor,
+  preencherFornecedorCompra, inicializarTotaisCompra, calcTotalCompra,
   // Backup
   exportarBackupJSON, importarBackupJSON,
   // Misc

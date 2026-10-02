@@ -620,6 +620,7 @@ tbody td {
 .badge-pendente { background: #ede9fe; color: #5b21b6; }
 .badge-reservado { background: #e0f2fe; color: #0369a1; }
 .badge-cancelado { background: #f3f4f6; color: #6b7280; }
+.badge-ativo { background: #d1fae5; color: #065f46; }
 
 /* ===== GRID LAYOUTS ===== */
 .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
@@ -1689,20 +1690,34 @@ tbody td:last-child {
   flex-wrap: nowrap;
 }
 
-/* Tabelas com muitas colunas — compactas e responsivas */
+/* Tabela de compras — scroll horizontal controlado, sem quebrar a página */
 .table-compact {
   width: 100%;
-  table-layout: fixed;
+  min-width: 1020px;
+  table-layout: auto;
   border-collapse: collapse;
 }
 .table-compact th,
 .table-compact td {
-  padding: 5px 4px;
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 8px 10px;
+  font-size: 12px;
+  vertical-align: middle;
 }
+.table-compact th {
+  white-space: nowrap;
+  text-align: left;
+}
+/* Valores monetários: nunca quebram, sempre alinhados à direita */
+.table-compact td.num {
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  min-width: 118px;
+}
+.table-compact th.col-vlr { min-width: 118px; }
+.table-compact .col-data,
+.table-compact .col-pagto,
+.table-compact .col-acoes { white-space: nowrap; }
 
 /* Cards não deixam overflow vazar */
 .card {
@@ -1891,7 +1906,8 @@ tbody td strong {
 /* ===== TABELAS RESPONSIVAS SEM SCROLL ===== */
 .rel-table-wrap {
   width: 100%;
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Tabelas dentro de cards — colunas se adaptam */
@@ -2091,6 +2107,7 @@ tbody td strong {
 }
 
 /* ===== RESPONSIVIDADE — TABELA COMPRAS ===== */
+/* Colunas essenciais (Item, Qtd, Vlr Unit, Total, Data, Status, Ações) nunca são ocultadas */
 @media (max-width: 1200px) {
   .table-compact .col-nf,
   .table-compact .col-setor,
@@ -2098,14 +2115,12 @@ tbody td strong {
   .table-compact .col-inv { display: none; }
 }
 @media (max-width: 992px) {
-  .table-compact .col-vlr,
-  .table-compact .col-data,
-  .table-compact .col-sol { display: none; }
+  .table-compact .col-sol,
+  .table-compact .col-pagto { display: none; }
 }
 @media (max-width: 768px) {
-  .table-compact .col-qtd { display: none; }
-  .table-compact { font-size: 10px; }
-  .table-compact th, .table-compact td { padding: 4px 5px; }
+  .table-compact { min-width: 860px; }
+  .table-compact th, .table-compact td { padding: 6px 8px; font-size: 11px; }
   .filter-bar { flex-direction: column; align-items: stretch; }
   .filter-bar .btn { width: 100%; }
   .stats-grid { grid-template-columns: repeat(2,1fr) !important; }
