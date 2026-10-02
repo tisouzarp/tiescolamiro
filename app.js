@@ -311,9 +311,10 @@ function loadState() {
     if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications','acompanhamentos','compras','fornecedores'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
     const sess = localStorage.getItem('miro_ti_session');
     if (sess) {
-      const { userId, page } = JSON.parse(sess);
+      const { userId } = JSON.parse(sess);
       const user = STATE.users.find(u => u.id === userId && u.status === 'ativo');
-      if (user) { STATE.currentUser = user; STATE.currentPage = page || 'dashboard'; }
+      // Página inicial é sempre o Dashboard (ignora página salva na sessão)
+      if (user) { STATE.currentUser = user; STATE.currentPage = 'dashboard'; }
     }
   } catch(e) {}
 }
@@ -336,6 +337,7 @@ function render() {
   const app = $('#app');
   if (!STATE.currentUser) { app.innerHTML = renderAuth(); attachAuthEvents(); }
   else { app.innerHTML = renderLayout(); attachLayoutEvents(); renderPage(STATE.currentPage); updateNotifBadge(); }
+  window.scrollTo(0,0);
 }
 
 // ===== AUTH (sem cadastro público) =====
@@ -549,6 +551,7 @@ function navigateTo(page) {
   if (titleEl) titleEl.textContent = titles[page] || page;
   $$('.nav-item[data-page]').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
   renderPage(page);
+  window.scrollTo(0,0);
 }
 
 function renderPage(page) {
@@ -3690,7 +3693,7 @@ function renderComprasRows(list) {
   return list.map(c=>`
   <tr>
     <td><strong style="color:var(--primary)">#${c.id}</strong></td>
-    <td>
+    <td class="col-item" title="${c.item||''}">
       <strong style="font-size:12px">${c.item}</strong>
       ${c.descricao?`<br><span class="text-muted" style="font-size:10px">${c.descricao}</span>`:''}
       ${c.categoria?`<br><span class="badge badge-reservado" style="font-size:10px;margin-top:2px">${c.categoria}</span>`:''}
@@ -3789,7 +3792,7 @@ function openModalCompra(compraId=null) {
             <input type="number" id="cp-descperc" min="0" max="100" step="0.01" placeholder="0" value="${c?.descontoPercent||''}" oninput="calcTotalCompra()"/>
           </div>
         </div>
-        <div class="cp-totais" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px">
+        <div class="cp-totais">
           <div style="background:var(--gray-50);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--gray-500);text-transform:uppercase">Subtotal</div><div id="cp-subtotal" style="font-size:15px;font-weight:800">R$ 0,00</div></div>
           <div style="background:#f0fdf4;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--success);text-transform:uppercase">Desconto (R$)</div><div id="cp-descval" style="font-size:15px;font-weight:800;color:var(--success)">R$ 0,00</div></div>
           <div style="background:var(--primary-light);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase">Valor Final</div><div id="cp-final" style="font-size:15px;font-weight:800;color:var(--primary)">R$ 0,00</div></div>
@@ -4239,7 +4242,7 @@ function imprimirCompras() {
     table{width:100%;border-collapse:collapse;font-size:10px;table-layout:auto}
     thead{display:table-header-group}
     thead th{background:#334155!important;color:white!important;padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:left;white-space:nowrap}
-    tbody td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+    tbody td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;overflow-wrap:break-word}
     tbody tr{page-break-inside:avoid}
     td.num,th.col-vlr{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
     .col-acoes{display:none!important}
@@ -4321,10 +4324,13 @@ function imprimirRelatorio() {
     .rel-kpi.teal   .rel-kpi-num { color: #009688; }
     .rel-kpi.purple .rel-kpi-num { color: #7b1fa2; }
 
-    /* Cards */
-    .card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 14px; overflow: hidden; page-break-inside: avoid; }
-    .card-header { padding: 10px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    /* Cards: podem continuar na mesma página após os KPIs; cabeçalho não fica órfão */
+    .card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 14px; overflow: hidden; page-break-inside: auto; }
+    .card-header { padding: 10px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; page-break-after: avoid; }
     .card-body { padding: 16px; }
+    thead { display: table-header-group; }
+    tbody tr { page-break-inside: avoid; }
+    .rel-kpi-grid { page-break-inside: avoid; }
 
     /* Cabeçalho institucional */
     .rel-print-header { display: flex !important; align-items: center; gap: 16px; padding: 16px 20px; background: #0073c8 !important; border-radius: 8px; margin-bottom: 16px; color: white; }
