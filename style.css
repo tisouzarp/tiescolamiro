@@ -723,6 +723,18 @@ tbody td {
 }
 .cp-totais > * { min-width: 0; }
 
+/* Itens avulsos da compra (função adicionarItemCompra) */
+.cp-item-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 110px 32px;
+  gap: 8px;
+}
+.cp-item-row > * { min-width: 0; }
+.cp-item-row input { width: 100%; box-sizing: border-box; }
+@media (max-width: 560px) {
+  .cp-item-row { grid-template-columns: 1fr 64px; }
+}
+
 /* Grids de formulário colapsam em telas menores — sem overflow horizontal */
 @media (max-width: 900px) {
   .form-row-3 { grid-template-columns: repeat(2, 1fr); }
@@ -731,6 +743,7 @@ tbody td {
   .form-row,
   .form-row-3,
   .cp-totais { grid-template-columns: 1fr; }
+  .modal-overlay { padding: 10px; }
   .modal-body { padding: 16px; }
   .modal-footer { padding: 12px 16px; }
   .modal-footer .btn { flex: 1 1 auto; justify-content: center; }
@@ -1775,6 +1788,75 @@ tbody td:last-child {
 /* Filtros: filhos podem encolher, sem vazar a página */
 .filter-bar > * { min-width: 0; }
 .search-bar { flex: 1 1 220px; min-width: 160px; max-width: 300px; }
+
+/* Stats de Compras: 2 colunas até 1280px para números R$ nunca cortarem */
+@media (max-width: 1280px) {
+  .stats-compras { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Cards compactos de compra — visíveis só em telas pequenas */
+.compras-cards { display: none; }
+.compra-card {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: white;
+  min-width: 0;
+}
+.compra-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.compra-card-top strong { min-width: 0; overflow-wrap: break-word; }
+.compra-card-sub { font-size: 11px; color: var(--gray-500); margin-top: 2px; }
+.compra-card-vals {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.compra-card-vals strong {
+  color: var(--primary);
+  font-size: 15px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.compra-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  #compras-cards.compras-cards { display: block; }
+  .compras-table-wrap { display: none; }
+}
+/* Scroll do wrapper inconfundível: fino e contido no card (só visual) */
+.compras-table-wrap {
+  border: 1px solid var(--gray-100);
+  border-radius: var(--radius);
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+.compras-table-wrap::-webkit-scrollbar { height: 8px; }
+.compras-table-wrap::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 4px; }
+.compras-table-wrap::-webkit-scrollbar-track { background: transparent; }
+@media print {
+  .compras-cards { display: none !important; }
+}
+@media (max-width: 560px) {
+  .stat-card { padding: 12px; gap: 10px; }
+  .stat-icon { width: 40px; height: 40px; font-size: 18px; }
+  .stat-label { font-size: 11px; overflow-wrap: anywhere; }
+}
 
 /* Cards não deixam overflow vazar */
 .card {

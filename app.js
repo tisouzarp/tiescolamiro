@@ -2588,7 +2588,7 @@ function openModalChamado(chamadoId=null, unidadeFixa=null) {
       <div class="form-row">
         <div class="form-group">
           <label class="required">Categoria</label>
-          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Canvas', 'Celular', 'Computador Sala', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Notebook', 'Nuvem', 'Office', 'Office 365', 'Projetor', 'Rede', 'Reunião', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'iPad', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
+          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Cabos', 'Canvas', 'Celular', 'Computador Sala', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Notebook', 'Nuvem', 'Office', 'Office 365', 'Projetor', 'Rede', 'Reunião', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'iPad', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
         </div>
         <div class="form-group">
           <label class="required">Prioridade</label>
@@ -3622,9 +3622,9 @@ function renderSLABadge(chamado) {
 
 // ===== COMPRAS =====
 const STATUS_COMPRA = ['Solicitado','Em cotação','Aprovado','Pedido realizado','Recebido','Entregue','Cancelado'];
-const PAGAMENTOS_COMPRA = ['Pix','Dinheiro','Boleto','DDA','Cartão'];
-const SETORES_COMPRA = ['TI', 'Secretaria', 'Coordenação', 'Direção', 'Biblioteca', 'Laboratório', 'Administrativo', 'Outro'];
-const CATS_COMPRA = ['Notebook','iPad','Tablet','Projetor','Caixa de Som','Microfone','Câmera','Monitor','Mouse','Teclado','Impressora','Roteador','Switch','Cabo/Acessório','Software/Licença','Peça de Reposição','Material de Consumo','Serviço Técnico','Outro'];
+const PAGAMENTOS_COMPRA = ['Boleto','Cartão','DDA','Dinheiro','Pix'];
+const SETORES_COMPRA = ['Administrativo', 'Biblioteca', 'Coordenação', 'Direção', 'Laboratório', 'Sala de Aula', 'Secretaria', 'TI', 'Outro'];
+const CATS_COMPRA = ['Cabo/Acessório','Cabos','Caixa de Som','Câmera','iPad','Impressora','Material de Consumo','Microfone','Monitor','Mouse','Notebook','Peça de Reposição','Projetor','Roteador','Serviço Técnico','Software/Licença','Switch','Tablet','Teclado','Outro'];
 
 function comprasPage() {
   const list = [...STATE.compras].sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
@@ -3633,7 +3633,7 @@ function comprasPage() {
   const recebidos  = STATE.compras.filter(c=>c.status==='Recebido').length;
 
   return `
-  <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:20px">
+  <div class="stats-grid stats-compras" style="margin-bottom:20px">
     <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-shopping-cart"></i></div><div class="stat-info"><div class="stat-number">${STATE.compras.length}</div><div class="stat-label">Total de Compras</div></div></div>
     <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-clock"></i></div><div class="stat-info"><div class="stat-number">${pendentes}</div><div class="stat-label">Em Andamento</div></div></div>
     <div class="stat-card"><div class="stat-icon green"><i class="ti ti-circle-check"></i></div><div class="stat-info"><div class="stat-number">${recebidos}</div><div class="stat-label">Recebidos</div></div></div>
@@ -3664,7 +3664,7 @@ function comprasPage() {
     <div class="card-header">
       <span class="card-title"><i class="ti ti-shopping-cart"></i> Registro de Compras TI (${list.length})</span>
     </div>
-    <div class="rel-table-wrap">
+    <div class="rel-table-wrap compras-table-wrap">
       <table class="table-compact">
         <thead><tr>
           <th>#</th><th>Item / Produto</th><th>Fornecedor</th><th class="col-qtd">Qtd</th>
@@ -3684,7 +3684,34 @@ function comprasPage() {
         </tfoot>`:''}
       </table>
     </div>
+    <div id="compras-cards" class="compras-cards">
+      ${renderComprasCards(list)}
+    </div>
   </div>`;
+}
+
+function renderComprasCards(list) {
+  if (!list.length) return `<div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div>`;
+  const statusColors = { 'Solicitado':'badge-pendente', 'Em cotação':'badge-andamento', 'Aprovado':'badge-reservado', 'Pedido realizado':'badge-aberto', 'Recebido':'badge-fechado', 'Entregue':'badge-ativo', 'Cancelado':'badge-cancelado' };
+  return list.map(c=>`
+  <div class="compra-card">
+    <div class="compra-card-top">
+      <strong>#${c.id} ${c.item||''}</strong>
+      <span class="badge ${statusColors[c.status]||'badge-pendente'}" style="font-size:10px">${c.status}</span>
+    </div>
+    <div class="compra-card-sub">${c.fornecedor||'—'} · ${formatDate(c.dataCompra)}${c.formaPagamento?` · ${c.formaPagamento}${(c.parcelas||0)>1?` ${(c.parcelas)}x`:''}`:''}</div>
+    <div class="compra-card-vals">
+      <span>${c.quantidade||1} × R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+      <strong>R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong>
+    </div>
+    <div class="compra-card-foot">
+      <button class="btn btn-ghost btn-sm" onclick="verCompra(${c.id})"><i class="ti ti-eye"></i> Ver detalhes</button>
+      <div style="display:flex;gap:2px">
+        <button class="btn-icon" onclick="editCompra(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
+        <button class="btn-icon" onclick="deleteCompra(${c.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>
+  </div>`).join('');
 }
 
 function renderComprasRows(list) {
@@ -3730,6 +3757,7 @@ function filtrarCompras() {
     .filter(c=>(!q||c.item?.toLowerCase().includes(q)||c.fornecedor?.toLowerCase().includes(q)||c.solicitante?.toLowerCase().includes(q))&&(!st||c.status===st)&&(!uni||(c.unidade||'Matriz')===uni)&&(!de||(c.dataCompra||'')>=de)&&(!ate||(c.dataCompra||'')<=ate))
     .sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
   const tb=$('#compras-tbody'); if(tb) tb.innerHTML=renderComprasRows(list);
+  const cd=$('#compras-cards'); if(cd) cd.innerHTML=renderComprasCards(list);
 }
 
 function limparFiltrosCompras() {
@@ -4641,7 +4669,7 @@ function adicionarItemCompra() {
   const div = document.createElement('div');
   div.className = 'cp-item-row';
   div.id = 'cpitem-' + idx;
-  div.style.cssText = 'display:grid;grid-template-columns:1fr 80px 110px 32px;gap:8px;margin-bottom:8px;align-items:center';
+  div.style.cssText = 'margin-bottom:8px;align-items:center';
   div.innerHTML =
     '<input type="text" placeholder="Nome do item" class="cp-item-nome" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>' +
     '<input type="number" placeholder="Qtd" value="1" min="1" class="cp-item-qtd" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;text-align:center"/>' +
