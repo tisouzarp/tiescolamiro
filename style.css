@@ -717,7 +717,7 @@ tbody td {
 /* Totais da compra (subtotal/desconto/final) */
 .cp-totais {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 4px;
 }
@@ -738,6 +738,7 @@ tbody td {
 /* Grids de formulário colapsam em telas menores — sem overflow horizontal */
 @media (max-width: 900px) {
   .form-row-3 { grid-template-columns: repeat(2, 1fr); }
+  .cp-totais { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .form-row,
@@ -1792,6 +1793,15 @@ tbody td:last-child {
 /* Stats de Compras: 2 colunas até 1280px para números R$ nunca cortarem */
 @media (max-width: 1280px) {
   .stats-compras { grid-template-columns: repeat(2, 1fr); }
+}
+/* Investimento Total: valor sempre inteiro, sem corte nem ellipsis */
+.stats-compras .stat-number {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  font-size: clamp(15px, 1.6vw, 24px);
+  line-height: 1.15;
 }
 
 /* Cards compactos de compra — visíveis só em telas pequenas */

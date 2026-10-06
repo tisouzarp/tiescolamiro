@@ -3728,7 +3728,7 @@ function renderComprasRows(list) {
     <td style="font-size:12px">${c.fornecedor||'—'}<br><span class="text-muted" style="font-size:10px">${c.contatoFornecedor||''}</span></td>
     <td class="col-qtd" style="text-align:center;font-weight:700">${c.quantidade||1}</td>
     <td class="col-vlr num" style="text-align:right">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-    <td class="col-vlr num" style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}${(c.descontoValor||0)>0?`<br><span style="font-size:10px;font-weight:600;color:var(--success)">desc R$ ${c.descontoValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>`:''}</td>
+    <td class="col-vlr num" style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}${(c.descontoValor||0)>0?`<br><span style="font-size:10px;font-weight:600;color:var(--success)">desc R$ ${c.descontoValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>`:''}${(c.frete||0)>0?`<br><span style="font-size:10px;font-weight:600;color:var(--accent)">+frete R$ ${c.frete.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>`:''}</td>
     <td class="col-data" style="font-size:12px;white-space:nowrap">${formatDate(c.dataCompra)}</td>
     <td class="col-nf" style="font-size:11px;color:var(--gray-500)">${c.notaFiscal||'—'}</td>
     <td class="col-sol" style="font-size:12px">${c.solicitante||'—'}</td>
@@ -3823,7 +3823,18 @@ function openModalCompra(compraId=null) {
         <div class="cp-totais">
           <div style="background:var(--gray-50);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--gray-500);text-transform:uppercase">Subtotal</div><div id="cp-subtotal" style="font-size:15px;font-weight:800">R$ 0,00</div></div>
           <div style="background:#f0fdf4;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--success);text-transform:uppercase">Desconto (R$)</div><div id="cp-descval" style="font-size:15px;font-weight:800;color:var(--success)">R$ 0,00</div></div>
+          <div style="background:#eff6ff;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase">Frete (R$)</div><div id="cp-freteval" style="font-size:15px;font-weight:800;color:var(--accent)">R$ 0,00</div></div>
           <div style="background:var(--primary-light);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase">Valor Final</div><div id="cp-final" style="font-size:15px;font-weight:800;color:var(--primary)">R$ 0,00</div></div>
+        </div>
+        <div class="form-row" style="margin-top:8px">
+          <div class="form-group" style="margin-bottom:0">
+            <label>Desconto (R$)</label>
+            <input type="text" inputmode="decimal" id="cp-descreais" placeholder="0,00" value="${c?.descontoReais??''}" oninput="calcTotalCompra()"/>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>Frete (R$)</label>
+            <input type="text" inputmode="decimal" id="cp-frete" placeholder="0,00" value="${c?.frete??''}" oninput="calcTotalCompra()"/>
+          </div>
         </div>
         <input type="hidden" id="cp-vlrtotal" value="${c?.valorTotal||''}"/>
       </div>
@@ -3962,7 +3973,7 @@ function openModalCompra(compraId=null) {
       </button>
     </div>
   </div>`);
-  const semDesconto = !!(c&&!(c.descontoPercent||c.descontoValor));
+  const semDesconto = !!(c&&!(c.descontoPercent||c.descontoValor||c.descontoReais||c.frete));
   setTimeout(()=>inicializarTotaisCompra(semDesconto,(c&&c.valorTotal)||0), 50);
 }
 
@@ -3974,25 +3985,43 @@ function inicializarTotaisCompra(preservar, valorSalvo) {
   const fmt=v=>'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
   const elS=$('#cp-subtotal'); if(elS) elS.textContent=fmt(qtd*unit);
   const elD=$('#cp-descval'); if(elD) elD.textContent=fmt(0);
+  const elFr=$('#cp-freteval'); if(elFr) elFr.textContent=fmt(0);
   const elF=$('#cp-final'); if(elF) elF.textContent=fmt(valorSalvo);
 }
 
 function changeQtyCp(d) {
   const i=$('#cp-qtd'); if(i) { i.value=Math.max(1,parseInt(i.value||1)+d); calcTotalCompra(); }
 }
+function parseMoeda(v) {
+  if (v == null) return 0;
+  let s = String(v).trim();
+  if (!s) return 0;
+  // Padrão BR: com vírgula, pontos são milhares ("1.000,00" -> 1000)
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isFinite(n) ? n : NaN;
+}
+function calcTotaisCompra(qtd, unit, descPerc, descReais, frete) {
+  const subtotal = (qtd||0) * (unit||0);
+  const descPercVal = subtotal * (descPerc||0) / 100;
+  const descTotal = Math.min(subtotal, descPercVal + (descReais||0));
+  const final = Math.max(0, subtotal - descTotal + (frete||0));
+  return { subtotal, descPercVal, descTotal, final };
+}
 function calcTotalCompra() {
   const qtd=parseFloat($('#cp-qtd')?.value)||0;
   const unit=parseFloat($('#cp-vlrunit')?.value)||0;
   let desc=parseFloat($('#cp-descperc')?.value)||0;
   if(desc<0) desc=0; if(desc>100) desc=100;
-  const subtotal=qtd*unit;
-  const descVal=subtotal*desc/100;
-  const final=Math.max(0,subtotal-descVal);
+  const reais=parseMoeda($('#cp-descreais')?.value);
+  const frete=parseMoeda($('#cp-frete')?.value);
+  const t=calcTotaisCompra(qtd,unit,desc,isNaN(reais)?0:Math.max(0,reais),isNaN(frete)?0:Math.max(0,frete));
   const fmt=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
-  const elS=$('#cp-subtotal'); if(elS) elS.textContent=fmt(subtotal);
-  const elD=$('#cp-descval'); if(elD) elD.textContent=fmt(descVal);
-  const elF=$('#cp-final'); if(elF) elF.textContent=fmt(final);
-  const total=$('#cp-vlrtotal'); if(total) total.value=final.toFixed(2);
+  const elS=$('#cp-subtotal'); if(elS) elS.textContent=fmt(t.subtotal);
+  const elD=$('#cp-descval'); if(elD) elD.textContent=fmt(t.descTotal);
+  const elFr=$('#cp-freteval'); if(elFr) elFr.textContent=fmt(isNaN(frete)?0:Math.max(0,frete));
+  const elF=$('#cp-final'); if(elF) elF.textContent=fmt(t.final);
+  const total=$('#cp-vlrtotal'); if(total) total.value=t.final.toFixed(2);
 }
 
 function preencherFornecedorCompra() {
@@ -4014,19 +4043,26 @@ function salvarCompra(id) {
     toast('Preencha: Item, Fornecedor, Data, Solicitante e Setor.','error'); return;
   }
   const qtd=parseInt($('#cp-qtd')?.value)||1;
-  const vlrUnit=parseFloat($('#cp-vlrunit')?.value)||0;
+  const vlrUnit=parseMoeda($('#cp-vlrunit')?.value);
+  if(isNaN(vlrUnit)||vlrUnit<0){ toast('Valor unitário inválido.','error'); return; }
   let descPerc=parseFloat($('#cp-descperc')?.value)||0;
   if(isNaN(descPerc)) descPerc=0;
   if(descPerc<0||descPerc>100){ toast('Desconto deve estar entre 0 e 100%.','error'); return; }
+  let descReais=parseMoeda($('#cp-descreais')?.value);
+  if(isNaN(descReais)) descReais=0;
+  if(descReais<0){ toast('Desconto (R$) não pode ser negativo.','error'); return; }
+  let frete=parseMoeda($('#cp-frete')?.value);
+  if(isNaN(frete)) frete=0;
+  if(frete<0){ toast('Frete não pode ser negativo.','error'); return; }
   const parcRaw=$('#cp-parcelas')?.value;
   let parc=(parcRaw===''||parcRaw==null)?1:parseInt(parcRaw);
   if(isNaN(parc)||parc<1){ toast('Parcelas deve ser um número inteiro maior que zero.','error'); return; }
   const formaPag=$('#cp-pagamento')?.value||'';
   if(formaPag && !PAGAMENTOS_COMPRA.includes(formaPag)){ toast('Forma de pagamento inválida.','error'); return; }
   const subtotal=qtd*vlrUnit;
-  const descVal=subtotal*descPerc/100;
+  const t=calcTotaisCompra(qtd,vlrUnit,descPerc,descReais,frete);
   let vlrTotal=parseFloat(($('#cp-vlrtotal')?.value)||'') ;
-  if(isNaN(vlrTotal)) vlrTotal=Math.max(0,subtotal-descVal);
+  if(isNaN(vlrTotal)) vlrTotal=t.final;
   if(vlrTotal<0){ toast('Valor final não pode ser negativo.','error'); return; }
   vlrTotal=Math.round(vlrTotal*100)/100;
   const fornId=$('#cp-fornecedor-id')?.value||'';
@@ -4041,7 +4077,8 @@ function salvarCompra(id) {
     fornecedorId: fornId||'',
     formaPagamento: formaPag, parcelas: parc,
     quantidade:qtd, valorUnitario:vlrUnit, valorTotal:vlrTotal,
-    descontoPercent: descPerc, descontoValor: Math.round(descVal*100)/100,
+    descontoPercent: descPerc, descontoValor: Math.round(t.descTotal*100)/100,
+    descontoReais: Math.round(descReais*100)/100, frete: Math.round(frete*100)/100,
     dataCompra:data, notaFiscal:$('#cp-nf')?.value||'',
     dataEntrega:$('#cp-entrega')?.value||'', status,
     link:$('#cp-link')?.value||'',
@@ -4138,7 +4175,11 @@ function verCompra(id) {
           ['Status', c.status, 'ti-circle'],
           ['Pagamento', c.formaPagamento||'—', 'ti-credit-card'],
           ['Parcelas', c.parcelas?c.parcelas+'x':'—', 'ti-calendar'],
+          ['Subtotal', `R$ ${((c.quantidade||0)*(c.valorUnitario||0)).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-calculator'],
           ['Desconto', (c.descontoPercent||0)>0?`${c.descontoPercent}% (R$ ${(c.descontoValor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})})`:'—', 'ti-discount'],
+          ['Desconto (R$)', `R$ ${(c.descontoReais??c.descontoValor??0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-cash'],
+          ['Frete', `R$ ${(c.frete||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-truck'],
+          ['Total', `R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-coin'],
           ['Inventário', c.adicionarInventario?'Sim — será adicionado':'Não', 'ti-server'],
         ].map(([l,v,ic])=>`
         <div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--gray-100)">
