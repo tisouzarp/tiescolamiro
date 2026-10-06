@@ -3820,13 +3820,7 @@ function openModalCompra(compraId=null) {
             <input type="number" id="cp-descperc" min="0" max="100" step="0.01" placeholder="0" value="${c?.descontoPercent||''}" oninput="calcTotalCompra()"/>
           </div>
         </div>
-        <div class="cp-totais">
-          <div style="background:var(--gray-50);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--gray-500);text-transform:uppercase">Subtotal</div><div id="cp-subtotal" style="font-size:15px;font-weight:800">R$ 0,00</div></div>
-          <div style="background:#f0fdf4;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--success);text-transform:uppercase">Desconto (R$)</div><div id="cp-descval" style="font-size:15px;font-weight:800;color:var(--success)">R$ 0,00</div></div>
-          <div style="background:#eff6ff;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase">Frete (R$)</div><div id="cp-freteval" style="font-size:15px;font-weight:800;color:var(--accent)">R$ 0,00</div></div>
-          <div style="background:var(--primary-light);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase">Valor Final</div><div id="cp-final" style="font-size:15px;font-weight:800;color:var(--primary)">R$ 0,00</div></div>
-        </div>
-        <div class="form-row" style="margin-top:8px">
+        <div class="form-row" style="margin-top:0">
           <div class="form-group" style="margin-bottom:0">
             <label>Desconto (R$)</label>
             <input type="text" inputmode="decimal" id="cp-descreais" placeholder="0,00" value="${c?.descontoReais??''}" oninput="calcTotalCompra()"/>
@@ -3835,6 +3829,12 @@ function openModalCompra(compraId=null) {
             <label>Frete (R$)</label>
             <input type="text" inputmode="decimal" id="cp-frete" placeholder="0,00" value="${c?.frete??''}" oninput="calcTotalCompra()"/>
           </div>
+        </div>
+        <div class="cp-totais">
+          <div style="background:var(--gray-50);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--gray-500);text-transform:uppercase">Subtotal</div><div id="cp-subtotal" style="font-size:15px;font-weight:800">R$ 0,00</div></div>
+          <div style="background:#f0fdf4;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--success);text-transform:uppercase">Desconto Total</div><div id="cp-descval" style="font-size:15px;font-weight:800;color:var(--success)">R$ 0,00</div></div>
+          <div style="background:#eff6ff;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase">Frete (R$)</div><div id="cp-freteval" style="font-size:15px;font-weight:800;color:var(--accent)">R$ 0,00</div></div>
+          <div style="background:var(--primary-light);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase">Valor Final</div><div id="cp-final" style="font-size:15px;font-weight:800;color:var(--primary)">R$ 0,00</div></div>
         </div>
         <input type="hidden" id="cp-vlrtotal" value="${c?.valorTotal||''}"/>
       </div>
