@@ -1402,7 +1402,7 @@ function reservasAtivasPage() {
     </div>
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>#</th><th>Equipamento</th><th>Solicitante / Cargo</th><th>Sala</th><th>Data / Horário</th><th>Qtd</th><th>Unidade</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Nº Reserva</th><th>Equipamento</th><th>Solicitante / Cargo</th><th>Sala</th><th>Data / Horário</th><th>Qtd</th><th>Unidade</th><th>Ações</th></tr></thead>
         <tbody id="tbody-res-ativas">
           ${renderResAtivas(list)}
         </tbody>
@@ -1411,10 +1411,29 @@ function reservasAtivasPage() {
   </div>`;
 }
 
+function diaSemanaPT(dataISO) {
+  const d = new Date((dataISO||'') + 'T12:00:00');
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('pt-BR', { weekday: 'long' }).toUpperCase();
+}
+
 function renderResAtivas(list) {
   list = sortByDate(list);
-  if(!list.length) return `<tr><td colspan="12"><div class="empty-state"><i class="ti ti-calendar-check"></i><h3>Nenhuma reserva aberta</h3><p>Todas as reservas foram fechadas!</p></div></td></tr>`;
-  return list.map(r=>`
+  if(!list.length) return `<tr><td colspan="8"><div class="empty-state"><i class="ti ti-calendar-check"></i><h3>Nenhuma reserva aberta</h3><p>Todas as reservas foram fechadas!</p></div></td></tr>`;
+  let html = '', diaAtual = null;
+  for (const r of list) {
+    if (r.dataInicio !== diaAtual) {
+      diaAtual = r.dataInicio;
+      const doDia = list.filter(x => x.dataInicio === diaAtual).length;
+      html += `<tr class="res-dia"><td colspan="8"><i class="ti ti-calendar-event"></i> ${diaSemanaPT(diaAtual)} · ${formatDate(diaAtual)} · ${doDia} ${doDia === 1 ? 'reserva' : 'reservas'}</td></tr>`;
+    }
+    html += resAtivaRow(r);
+  }
+  return html;
+}
+
+function resAtivaRow(r) {
+  return `
   <tr>
     <td><strong style="color:var(--primary)">#${r.id}</strong></td>
     <td><strong>${r.equipamento}</strong><br><span class="text-muted" style="font-size:11px">${r.equipamentoTipo}</span></td>
@@ -1431,7 +1450,7 @@ function renderResAtivas(list) {
         <button class="btn-icon" onclick="deleteReserva(${r.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
       </div>
     </td>
-  </tr>`).join('');
+  </tr>`;
 }
 
 function filtrarResAtivas(q) {

@@ -1868,6 +1868,22 @@ tbody td:last-child {
   .stat-label { font-size: 11px; overflow-wrap: anywhere; }
 }
 
+/* Faixa separadora de dia (Reservas Abertas) */
+.res-dia td {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 8px 10px;
+  border-top: 1px solid var(--primary-mid);
+  border-bottom: 1px solid var(--primary-mid);
+  white-space: normal;
+}
+.res-dia td i { margin-right: 6px; }
+
 /* Cards não deixam overflow vazar */
 .card {
   overflow: visible;
