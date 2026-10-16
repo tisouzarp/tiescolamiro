@@ -810,17 +810,17 @@ function dashboard() {
 
   <!-- RESERVAS ABERTAS (não do dia de hoje) -->
   ${(() => {
-    const abertas = STATE.reservas.filter(r=>r.status==='ativo'&&r.dataInicio!==hoje);
+    const abertas = sortByDate(STATE.reservas.filter(r=>r.status==='ativo'&&r.dataInicio!==hoje));
     if(!abertas.length) return '';
-    return `<div class="card mb-20" style="border-left:4px solid var(--warning)">
-      <div class="card-header" style="background:var(--warning-bg)">
-        <span class="card-title"><i class="ti ti-calendar-event" style="color:var(--warning)"></i> Reservas Abertas (${abertas.length})</span>
-        <button class="btn btn-sm btn-ghost" onclick="navigateTo('reservas-ativas')">Ver todas</button>
-      </div>
-      <div class="card-body" style="padding:0">
-        <table style="width:100%">
-          <thead><tr><th>Equipamento</th><th>Solicitante</th><th>Sala</th><th>Data</th><th>Horário</th><th>Unidade</th><th>Ações</th></tr></thead>
-          <tbody>${abertas.slice(0,5).map(r=>`
+    const top = abertas.slice(0,5);
+    let diaAtual = null, linhas = '';
+    for (const r of top) {
+      if (r.dataInicio !== diaAtual) {
+        diaAtual = r.dataInicio;
+        const doDia = top.filter(x => x.dataInicio === diaAtual).length;
+        linhas += `<tr class="res-dia"><td colspan="7"><i class="ti ti-calendar-event"></i> ${diaSemanaPT(diaAtual)} · ${formatDate(diaAtual)} · ${doDia} ${doDia === 1 ? 'reserva' : 'reservas'}</td></tr>`;
+      }
+      linhas += `
             <tr>
               <td><strong>${r.equipamento}</strong></td><td>${r.solicitante}</td>
               <td>${r.sala}</td><td>${formatDate(r.dataInicio)}</td>
@@ -829,7 +829,17 @@ function dashboard() {
                 <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
                 <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('dashboard')" title="Fechar" style="color:var(--success)"><i class="ti ti-check"></i></button>
               </div></td>
-            </tr>`).join('')}
+            </tr>`;
+    }
+    return `<div class="card mb-20" style="border-left:4px solid var(--warning)">
+      <div class="card-header" style="background:var(--warning-bg)">
+        <span class="card-title"><i class="ti ti-calendar-event" style="color:var(--warning)"></i> Reservas Abertas (${abertas.length})</span>
+        <button class="btn btn-sm btn-ghost" onclick="navigateTo('reservas-ativas')">Ver todas</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%">
+          <thead><tr><th>Equipamento</th><th>Solicitante</th><th>Sala</th><th>Data</th><th>Horário</th><th>Unidade</th><th>Ações</th></tr></thead>
+          <tbody>${linhas}
           </tbody>
         </table>
         ${abertas.length>5?`<div style="padding:10px 16px;text-align:center;border-top:1px solid var(--gray-100)"><button class="btn btn-ghost btn-sm" onclick="navigateTo('reservas-ativas')">Ver todas as ${abertas.length} reservas abertas</button></div>`:''}
@@ -1146,7 +1156,7 @@ function inventario() {
     <select class="filter-select" id="filter-inv-uni"><option value="">Todas as unidades</option><option>Matriz</option><option>Ensino Médio</option></select>
     <button class="btn btn-primary" onclick="openModalInventario()"><i class="ti ti-plus"></i> Novo Item</button>
   </div>
-  <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:20px">
+  <div class="stats-grid" style="margin-bottom:20px">
     ${INV_CATS.filter(c=>STATE.inventario.some(i=>i.categoria===c)).map(c=>`
     <div class="stat-card" style="padding:14px 16px">
       <div class="stat-icon blue" style="width:36px;height:36px;font-size:16px"><i class="ti ti-${invIcon(c)}"></i></div>
@@ -1155,7 +1165,7 @@ function inventario() {
   </div>
   <div class="card">
     <div class="card-header"><span class="card-title"><i class="ti ti-server"></i> Inventário Completo (${STATE.inventario.length} itens)</span></div>
-    <div class="rel-table-wrap"><table class="table-compact"><thead><tr><th>Nome</th><th>Categoria</th><th>Marca / Modelo</th><th>Patrimônio</th><th>IP / Série</th><th>Local</th><th>Unidade</th><th>Garantia</th><th>Status</th><th>Ações</th></tr></thead>
+    <div class="rel-table-wrap"><table class="table-compact"><thead><tr><th>Nome</th><th class="inv-hide-xs">Categoria</th><th class="inv-hide-sm">Marca / Modelo</th><th>Patrimônio</th><th class="inv-hide-sm">IP / Série</th><th class="inv-hide-sm inv-hide-md">Local</th><th class="inv-hide-xs">Unidade</th><th class="inv-hide-sm">Garantia</th><th>Status</th><th>Ações</th></tr></thead>
     <tbody id="inv-tbody">${renderInvRows(STATE.inventario)}</tbody></table></div>
   </div>`;
 }
@@ -1166,14 +1176,14 @@ function renderInvRows(list) {
   if(!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item no inventário</h3></div></td></tr>`;
   return list.map(i=>`
   <tr>
-    <td><strong style="font-size:12px">${i.nome}</strong>${i.obs?`<br><span class="text-muted" style="font-size:10px">${i.obs}</span>`:''}</td>
-    <td><span class="badge badge-reservado" style="font-size:10px">${i.categoria}</span></td>
-    <td style="font-size:12px">${i.marca||''} ${i.modelo||''}</td>
-    <td><code style="background:var(--gray-100);padding:2px 5px;border-radius:4px;font-size:10px">${i.patrimonio}</code></td>
-    <td style="font-size:10px;color:var(--gray-500)"><code style="display:block">${i.ip||'—'}</code><span>${i.serie||'—'}</span></td>
-    <td style="font-size:11px">${i.local||'—'}</td>
-    <td style="font-size:11px">${i.unidade}</td>
-    <td><span style="font-size:11px;color:${diasParaVencer(i.garantia)<90?'var(--warning)':'inherit'}">${formatDate(i.garantia)||'—'}</span></td>
+    <td class="col-item" title="${i.nome||''}"><strong style="font-size:12px">${i.nome}</strong>${i.obs?`<br><span class="text-muted" style="font-size:10px">${i.obs}</span>`:''}</td>
+    <td class="inv-hide-xs"><span class="badge badge-reservado" style="font-size:10px">${i.categoria}</span></td>
+    <td class="inv-hide-sm" style="font-size:12px">${i.marca||''} ${i.modelo||''}</td>
+    <td><code style="background:var(--gray-100);padding:2px 5px;border-radius:4px;font-size:10px;white-space:nowrap">${i.patrimonio}</code></td>
+    <td class="inv-hide-sm" style="font-size:10px;color:var(--gray-500)"><code style="display:block;white-space:nowrap">${i.ip||'—'}</code><span>${i.serie||'—'}</span></td>
+    <td class="inv-hide-sm inv-hide-md" style="font-size:11px">${i.local||'—'}</td>
+    <td class="inv-hide-xs" style="font-size:11px">${i.unidade}</td>
+    <td class="inv-hide-sm"><span style="font-size:11px;white-space:nowrap;color:${diasParaVencer(i.garantia)<90?'var(--warning)':'inherit'}">${formatDate(i.garantia)||'—'}</span></td>
     <td><span class="badge badge-${i.status==='ativo'?'fechado':'suspenso'}" style="font-size:10px">${i.status}</span></td>
     <td><div style="display:flex;gap:2px">
       <button class="btn-icon" onclick="editInventario(${i.id})" title="Editar"><i class="ti ti-edit"></i></button>

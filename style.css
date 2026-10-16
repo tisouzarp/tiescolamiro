@@ -1851,8 +1851,6 @@ tbody td:last-child {
 }
 /* Scroll do wrapper inconfundível: fino e contido no card (só visual) */
 .compras-table-wrap {
-  border: 1px solid var(--gray-100);
-  border-radius: var(--radius);
   scrollbar-width: thin;
   scrollbar-color: var(--gray-300) transparent;
 }
@@ -1861,6 +1859,19 @@ tbody td:last-child {
 .compras-table-wrap::-webkit-scrollbar-track { background: transparent; }
 @media print {
   .compras-cards { display: none !important; }
+}
+/* Inventário: colunas secundárias cedem em telas menores (dados no Editar) */
+@media (max-width: 1400px) {
+  .table-compact .inv-hide-md { display: none; }
+}
+@media (max-width: 1100px) {
+  .table-compact .inv-hide-sm { display: none; }
+}
+@media (max-width: 640px) {
+  .table-compact .inv-hide-xs { display: none; }
+  .table-compact tbody td.col-item { min-width: 0; }
+  /* !important: vence o white-space inline dos códigos em telas mínimas */
+  .table-compact td code { white-space: normal !important; overflow-wrap: anywhere; }
 }
 @media (max-width: 560px) {
   .stat-card { padding: 12px; gap: 10px; }
