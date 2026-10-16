@@ -3523,7 +3523,7 @@ function configuracoes() {
           <img src="logo.png" alt="Escola Miró" style="max-height:70px;object-fit:contain;margin-bottom:16px" onerror="this.style.display='none'">
           <h3 style="font-size:18px;font-weight:800;color:var(--gray-900)">TI - Escola Miró</h3>
           <p style="font-size:13px;color:var(--gray-500);margin-top:6px">Sistema de Chamados e Reservas</p>
-          <p style="font-size:13px;color:var(--gray-500)">Versão 7.3 | Firebase Firestore</p>
+          <p style="font-size:13px;color:var(--gray-500)">Versão 8.9 | Firebase Firestore</p>
           <div style="margin-top:16px;padding:12px;background:var(--primary-light);border-radius:8px">
             <p style="font-size:12px;color:var(--primary);font-weight:600">Responsável TI: Tiago Souza</p>
             <p style="font-size:11px;color:var(--gray-500);margin-top:2px">Copyright © 2026 Tiago Souza. Todos os direitos reservados.</p>
@@ -3686,7 +3686,7 @@ function comprasPage() {
     <div class="rel-table-wrap compras-table-wrap">
       <table class="table-compact">
         <thead><tr>
-          <th>#</th><th>Item / Produto</th><th>Fornecedor</th><th class="col-qtd">Qtd</th>
+          <th>#</th><th>Item / Produto</th><th class="col-forn">Fornecedor</th><th class="col-qtd">Qtd</th>
           <th class="col-vlr">Vlr Unit.</th><th class="col-vlr">Total</th><th class="col-data">Data Compra</th>
           <th class="col-nf">Nota Fiscal</th><th class="col-sol">Solicitante</th><th class="col-setor">Setor</th>
           <th class="col-unid">Unidade</th><th class="col-pagto">Pagto</th><th>Status</th><th class="col-inv">Inv.</th><th class="col-acoes">Ações</th>
@@ -3744,7 +3744,7 @@ function renderComprasRows(list) {
       ${c.descricao?`<br><span class="text-muted" style="font-size:10px">${c.descricao}</span>`:''}
       ${c.categoria?`<br><span class="badge badge-reservado" style="font-size:10px;margin-top:2px">${c.categoria}</span>`:''}
     </td>
-    <td style="font-size:12px">${c.fornecedor||'—'}<br><span class="text-muted" style="font-size:10px">${c.contatoFornecedor||''}</span></td>
+    <td class="col-forn" style="font-size:12px">${c.fornecedor||'—'}<br><span class="text-muted" style="font-size:10px">${c.contatoFornecedor||''}</span></td>
     <td class="col-qtd" style="text-align:center;font-weight:700">${c.quantidade||1}</td>
     <td class="col-vlr num" style="text-align:right">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
     <td class="col-vlr num" style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}${(c.descontoValor||0)>0?`<br><span style="font-size:10px;font-weight:600;color:var(--success)">desc R$ ${c.descontoValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>`:''}${(c.frete||0)>0?`<br><span style="font-size:10px;font-weight:600;color:var(--accent)">+frete R$ ${c.frete.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>`:''}</td>

@@ -1738,7 +1738,7 @@ tbody td:last-child {
 /* Tabela de compras — scroll horizontal controlado, sem quebrar a página */
 .table-compact {
   width: 100%;
-  min-width: 1020px;
+  min-width: 640px;
   table-layout: auto;
   border-collapse: collapse;
 }
@@ -1757,9 +1757,9 @@ tbody td:last-child {
   white-space: nowrap;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  min-width: 118px;
+  min-width: 84px;
 }
-.table-compact th.col-vlr { min-width: 118px; }
+.table-compact th.col-vlr { min-width: 84px; white-space: nowrap; }
 .table-compact .col-data,
 .table-compact .col-pagto,
 .table-compact .col-acoes { white-space: nowrap; }
@@ -1845,7 +1845,7 @@ tbody td:last-child {
   margin-top: 8px;
   flex-wrap: wrap;
 }
-@media (max-width: 640px) {
+@media (max-width: 1024px) {
   #compras-cards.compras-cards { display: block; }
   .compras-table-wrap { display: none; }
 }
@@ -2272,19 +2272,33 @@ tbody td strong {
 }
 
 /* ===== RESPONSIVIDADE — TABELA COMPRAS ===== */
-/* Colunas essenciais (Item, Qtd, Vlr Unit, Total, Data, Status, Ações) nunca são ocultadas */
-@media (max-width: 1200px) {
+/* Colunas essenciais (Item, Qtd, Vlr Unit, Total, Data, Status, Ações) nunca são ocultadas.
+   Secundárias (NF, Setor, Unidade, Inv., Solicitante, Pagto) cedem espaço
+   em telas menores — dados seguem acessíveis no Ver detalhes. */
+@media (max-width: 1400px) {
   .table-compact .col-nf,
   .table-compact .col-setor,
   .table-compact .col-unid,
   .table-compact .col-inv { display: none; }
 }
-@media (max-width: 992px) {
+@media (max-width: 1200px) {
   .table-compact .col-sol,
   .table-compact .col-pagto { display: none; }
 }
+/* Telas médias: sem Fornecedor (segue no Ver detalhes) + células compactas */
+@media (max-width: 1100px) {
+  .table-compact .col-forn { display: none; }
+  .table-compact th, .table-compact td { padding: 6px 8px; }
+  .table-compact td.col-item { min-width: 150px; max-width: 280px; }
+  .table-compact th.col-data { white-space: normal; }
+}
+/* Notebooks menores: cabeçalho Data em 2 linhas + Item mais estreito */
+@media (max-width: 1400px) {
+  .table-compact th.col-data { white-space: normal; }
+  .table-compact td.col-item { max-width: 300px; }
+}
 @media (max-width: 768px) {
-  .table-compact { min-width: 860px; }
+  .table-compact { min-width: 0; }
   .table-compact th, .table-compact td { padding: 6px 8px; font-size: 11px; }
   .filter-bar { flex-direction: column; align-items: stretch; }
   .filter-bar .btn { width: 100%; }
