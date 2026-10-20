@@ -24,12 +24,12 @@ window.addEventListener('unhandledrejection', function(e) {
 
 // ===== FIREBASE CONFIG =====
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAKGA46bGIowZn1T07Up96yVPjTk5u9QdY",
-  authDomain: "ti-escola-miro-novo.firebaseapp.com",
-  projectId: "ti-escola-miro-novo",
-  storageBucket: "ti-escola-miro-novo.firebasestorage.app",
-  messagingSenderId: "461542239864",
-  appId: "1:461542239864:web:a5e0498a2ec4a4ef3b078d"
+  apiKey: "AIzaSyCNZJsFFYhWFyCDdmhCrmwlzS7cHlzoIks",
+  authDomain: "ti-escola-miro.firebaseapp.com",
+  projectId: "ti-escola-miro",
+  storageBucket: "ti-escola-miro.firebasestorage.app",
+  messagingSenderId: "1042529818892",
+  appId: "1:1042529818892:web:5b366914bb0c5a5c045129"
 };
 
 // Coleções do Firestore
