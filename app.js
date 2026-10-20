@@ -78,10 +78,11 @@ async function initFirebase() {
 
 // ===== FIREBASE HELPERS =====
 async function fbSave(colecao, id, dados) {
-  if (!DB_READY) { saveState(); return; }
+  if (!DB_READY) { saveState(); return Promise.resolve(false); }
   try {
     await db.collection(colecao).doc(String(id)).set({ ...dados, _id: id }, { merge: true });
-  } catch(e) { console.error('fbSave error:', e); saveState(); }
+    return Promise.resolve(true);
+  } catch(e) { console.error('fbSave error:', e); saveState(); return Promise.reject(e); }
 }
 
 async function fbDelete(colecao, id) {
@@ -2556,7 +2557,7 @@ function toggleOutroSala(sel){ const g=$('#res-outro-sala-group'); if(g) g.style
 function changeQty(d){ const i=$('#res-qtd'); if(i) i.value=Math.max(1,Math.min(99,parseInt(i.value)+d)); }
 function editReserva(id){ openModalReserva(id); }
 
-function salvarReserva(id) {
+async function salvarReserva(id) {
   const reservaAtual = id ? STATE.reservas.find(r=>r.id===id) : null;
   const tipo=$('#res-tipo')?.value || (reservaAtual?.equipamentoTipo||'');
   const equipVal=$('#res-equip')?.value;
@@ -2585,19 +2586,19 @@ function salvarReserva(id) {
   const qtd=parseInt($('#res-qtd')?.value)||1, obs=$('#res-obs')?.value||'', unidade=$('#res-unidade')?.value||'Matriz';
   if(!tipo||!equipNome||!cargo||!nome||!sala||!data){ toast('Preencha todos os campos obrigatórios.','error'); return; }
   if(!aulasSel.length && !hinicio){ toast('Selecione pelo menos uma aula ou defina um horário.','error'); return; }
-  if(id){ const r=STATE.reservas.find(r=>r.id===id); if(r){ Object.assign(r,{equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,aulas:aulasSel,quantidade:qtd,obs,unidade}); fbSave('reservas',r.id,r); } toast('Reserva atualizada!'); }
+  if(id){ const r=STATE.reservas.find(r=>r.id===id); if(r){ Object.assign(r,{equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,aulas:aulasSel,quantidade:qtd,obs,unidade}); const fbResult = await fbSave('reservas',r.id,r); if(fbResult === true){ toast('Reserva atualizada!'); } else if(fbResult === false){ toast('Reserva atualizada localmente.','info'); } } }
   else {
     const recorrencia = $('#res-recorrencia')?.value || '';
     const datas = gerarDatasRecorrentes(data, recorrencia);
     for (const dt of datas) {
       const nr={id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:dt,horaInicio:hinicio,horaFim:hfim,aulas:aulasSel,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow(),recorrencia:recorrencia||null};
-      STATE.reservas.push(nr); fbSave('reservas',nr.id,nr);
+      STATE.reservas.push(nr); const fbResult = await fbSave('reservas',nr.id,nr); if(fbResult === true){ /* sucesso na nuvem */ } else if(fbResult === false){ toast('Reserva criada localmente.','info'); }
     }
-    addNotification('Nova reserva criada',`${nome} reservou ${equipNome}${datas.length>1?' ('+datas.length+'x)':''}`, 'ti-calendar-plus');
-    toast(datas.length > 1 ? `${datas.length} reservas criadas!` : 'Reserva criada!');
+}
+    addNotification('Nova reserva criada', nome + ' reservou ' + equipNome + (datas.length>1? ' ('+datas.length+'x)':''), 'ti-calendar-plus');
+    toast(datas.length > 1 ? ' ' + datas.length + ' reservas criadas!' : ' Reserva criada!');
   }
   closeModal(); saveState(); renderPage(STATE.currentPage);
-}
 
 // ===== MODALS: CHAMADO =====
 function openModalChamado(chamadoId=null, unidadeFixa=null) {
@@ -2661,7 +2662,7 @@ function openModalChamado(chamadoId=null, unidadeFixa=null) {
 }
 function editChamado(id){ openModalChamado(id); }
 
-function salvarChamado(id) {
+async function salvarChamado(id) {
   const chamadoAtual = id ? STATE.chamados.find(c=>c.id===id) : null;
   const titulo=($('#ch-titulo')?.value||'').trim() || (chamadoAtual?.titulo||'');
   const cat=$('#ch-cat')?.value || (chamadoAtual?.categoria||'');
@@ -2673,8 +2674,8 @@ function salvarChamado(id) {
   const dataCh=$('#ch-data')?.value || (chamadoAtual?.criado||dateNow());
   const horaCh=$('#ch-hora')?.value || (chamadoAtual?.hora||'');
   if(!titulo||!cat||!prio||!sol||!desc){ toast('Preencha todos os campos obrigatórios.','error'); return; }
-  if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c){ Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,criado:dataCh,hora:horaCh,atualizado:dateNow()}); fbSave('chamados',c.id,c); } toast('Chamado atualizado!'); }
-  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,atribuido:atrib,descricao:desc,unidade,status:'aberto',criado:dataCh,hora:horaCh,atualizado:dateNow()}; STATE.chamados.push(nc); fbSave('chamados',nc.id,nc); addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); }
+  if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c){ Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,criado:dataCh,hora:horaCh,atualizado:dateNow()}); const fbResult = await fbSave('chamados',c.id,c); if(fbResult === true){ toast('Chamado atualizado!'); } else if(fbResult === false){ toast('Chamado atualizado localmente.','info'); } } }
+  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,status:'aberto',criado:dataCh,hora:horaCh,atualizado:dateNow()}; STATE.chamados.push(nc); const fbResult = await fbSave('chamados',nc.id,nc); if(fbResult === true){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); } else if(fbResult === false){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado criado localmente.','info'); } }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
 
@@ -2893,11 +2894,11 @@ async function salvarUsuario(id) {
   closeModal(); saveState(); renderPage('usuarios');
 }
 function deleteUsuario(id){ if(id===STATE.currentUser.id){ toast('Não pode excluir seu próprio usuário.','error'); return; } if(!confirm('Excluir usuário?')) return; fbDelete('users',id); STATE.users=STATE.users.filter(u=>u.id!==id); saveState(); renderPage('usuarios'); toast('Usuário excluído.','info'); }
-function toggleUserStatus(id){ const u=STATE.users.find(u=>u.id===id); if(!u) return; u.status=u.status==='ativo'?'suspenso':'ativo'; fbSave('users',u.id,u); saveState(); renderPage('usuarios'); toast(`Usuário ${u.status}.`,'info'); }
+async function toggleUserStatus(id){ const u=STATE.users.find(u=>u.id===id); if(!u) return; u.status=u.status==='ativo'?'suspenso':'ativo'; const fbResult = await fbSave('users',u.id,u); if(fbResult === true){ toast(`Usuário ${u.status}.`,'info'); } else if(fbResult === false){ toast('Status do usuário atualizado localmente.','info'); } renderPage('usuarios'); }
 
 // ===== STATUS CHANGERS =====
-function changeReservaStatus(id, status){ const r=STATE.reservas.find(r=>r.id===id); if(r){ r.status=status; fbSave('reservas',r.id,r); saveState(); toast(`Reserva ${status}!`); } }
-function changeChamadoStatus(id, status){ const c=STATE.chamados.find(c=>c.id===id); if(c){ c.status=status; c.atualizado=dateNow(); fbSave('chamados',c.id,c); saveState(); toast(`Chamado ${status}!`); } }
+async function changeReservaStatus(id, status){ const r=STATE.reservas.find(r=>r.id===id); if(r){ r.status=status; const fbResult = await fbSave('reservas',r.id,r); if(fbResult === true){ toast(`Reserva ${status}!`); } else if(fbResult === false){ toast('Reserva atualizada localmente.','info'); } } saveState(); }
+async function changeChamadoStatus(id, status){ const c=STATE.chamados.find(c=>c.id===id); if(c){ c.status=status; c.atualizado=dateNow(); const fbResult = await fbSave('chamados',c.id,c); if(fbResult === true){ toast(`Chamado ${status}!`); } else if(fbResult === false){ toast('Chamado atualizado localmente.','info'); } } }
 function deleteReserva(id){ if(!confirm('Excluir reserva?')) return; fbDelete('reservas',id); STATE.reservas=STATE.reservas.filter(r=>r.id!==id); saveState(); renderPage(STATE.currentPage); toast('Reserva excluída.','info'); }
 function deleteChamado(id){ if(!confirm('Excluir chamado?')) return; fbDelete('chamados',id); STATE.chamados=STATE.chamados.filter(c=>c.id!==id); saveState(); renderPage(STATE.currentPage); toast('Chamado excluído.','info'); }
 
@@ -4062,7 +4063,7 @@ function preencherFornecedorCompra() {
   const ct=$('#cp-contato'); if(ct && !ct.value.trim()) ct.value=f.contato||f.telefone||f.email||'';
 }
 
-function salvarCompra(id) {
+async function salvarCompra(id) {
   const item=$('#cp-item')?.value.trim();
   const fornecedor=$('#cp-fornecedor')?.value.trim();
   const data=$('#cp-data')?.value;
@@ -4120,12 +4121,12 @@ function salvarCompra(id) {
 
   if(id) {
     const c=STATE.compras.find(c=>String(c.id)===String(id));
-    if(c) { Object.assign(c,dados); fbSave('compras',c.id,c); }
+    if(c) { Object.assign(c,dados); const fbResult = await fbSave('compras',c.id,c); if(fbResult === true){ toast('Compra atualizada!'); } else if(fbResult === false){ toast('Compra atualizada localmente.','info'); } }
     if(status==='Recebido'&&addInv&&c) adicionarCompraInventario(c);
     toast('Compra atualizada!');
   } else {
     const nc={id:STATE.nextId.compra++,...dados};
-    STATE.compras.push(nc); fbSave('compras',nc.id,nc);
+    STATE.compras.push(nc); const fbResult = await fbSave('compras',nc.id,nc); if(fbResult === true){ addNotification('Nova compra registrada',item+' → '+fornecedor,'ti-shopping-cart'); toast('Compra registrada!'); }
     addNotification('Nova compra registrada',`${item} — ${fornecedor}`,'ti-shopping-cart');
     // Se status Recebido e addInv, adicionar ao inventário
     if(status==='Recebido'&&addInv) adicionarCompraInventario(nc);
