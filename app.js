@@ -15,13 +15,11 @@ window.addEventListener('unhandledrejection', function(e) {
   if (msg.includes('MetaMask') || msg.includes('ethereum') || msg.includes('wallet')) return;
   console.error('Unhandled rejection:', e.reason);
 });
-
 /* ============================================================
    TI - ESCOLA MIRÓ | Sistema de Chamados e Reservas v2
    Responsável: Tiago Souza
    Banco de dados: Firebase Firestore (nuvem, tempo real)
    ============================================================ */
-
 // ===== FIREBASE CONFIG =====
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCNZJsFFYhWFyCDdmhCrmwlzS7cHlzoIks",
@@ -31,15 +29,12 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "1042529818892",
   appId: "1:1042529818892:web:5b366914bb0c5a5c045129"
 };
-
 // Coleções do Firestore
 const COLECOES = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','notifications','config','compras','fornecedores'];
-
 // Firebase SDK via CDN (carregado no index.html)
 let db = null;   // Firestore instance
 let DB_READY = false;
 let OFFLINE_MODE = false;
-
 async function initFirebase() {
   try {
     // Aguardar SDK global do Firebase (carregado via script no index.html)
@@ -49,10 +44,8 @@ async function initFirebase() {
       tentativas++;
     }
     if (typeof firebase === 'undefined') throw new Error('Firebase SDK não carregado');
-
     const app = firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.firestore(app);
-
     window.FB_DB = db;
     window.FB_FUNS = {
       collection: (db, col) => db.collection(col),
@@ -75,7 +68,6 @@ async function initFirebase() {
     return false;
   }
 }
-
 // ===== FIREBASE HELPERS =====
 async function fbSave(colecao, id, dados) {
   if (!DB_READY) { saveState(); return Promise.resolve(false); }
@@ -84,14 +76,12 @@ async function fbSave(colecao, id, dados) {
     return Promise.resolve(true);
   } catch(e) { console.error('fbSave error:', e); saveState(); return Promise.reject(e); }
 }
-
 async function fbDelete(colecao, id) {
   if (!DB_READY) return;
   try {
     await db.collection(colecao).doc(String(id)).delete();
   } catch(e) { console.error('fbDelete error:', e); }
 }
-
 async function fbLoadAll() {
   if (!DB_READY) return false;
   try {
@@ -123,14 +113,12 @@ async function fbLoadAll() {
     return false;
   }
 }
-
 async function fbSaveConfig() {
   if (!DB_READY) return;
   try {
     await db.collection('config').doc('main').set({ nextId: STATE.nextId });
   } catch(e) { console.error('fbSaveConfig error:', e); }
 }
-
 // Migrar dados do localStorage para o Firebase (uma única vez)
 async function migrarLocalParaFirebase() {
   if (!DB_READY) return;
@@ -163,7 +151,6 @@ async function migrarLocalParaFirebase() {
     toast('Migração encontrou um erro. Dados locais preservados.', 'warning');
   }
 }
-
 function showMigracaoModal() {
   let el = document.getElementById('migracao-overlay');
   if (!el) {
@@ -185,18 +172,15 @@ function closeMigracaoModal() {
   const el = document.getElementById('migracao-overlay');
   if (el) el.remove();
 }
-
 // ===== SEGURANÇA: HASH DE SENHA =====
 async function hashSenha(senha) {
   const enc = new TextEncoder();
   const buf = await crypto.subtle.digest('SHA-256', enc.encode(senha));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-
 async function verificarSenha(senha, hash) {
   return await hashSenha(senha) === hash;
 }
-
 // ===== STATE =====
 const STATE = {
   currentUser: null,
@@ -243,8 +227,6 @@ const STATE = {
   filtros: { reserva: '', chamado: '', chamadoPrio: '', reservaSearch: '', chamadoSearch: '' },
   sla: { Alta: 2, Media: 8, Baixa: 24 }, // horas de SLA por prioridade
 };
-
-
 function sortByDate(list, campo='dataInicio', asc=true) {
   return [...list].sort((a,b) => {
     const da = a[campo] || '';
@@ -252,13 +234,11 @@ function sortByDate(list, campo='dataInicio', asc=true) {
     return asc ? da.localeCompare(db) : db.localeCompare(da);
   });
 }
-
 function dateNow() { return new Date().toISOString().split('T')[0]; }
 function formatDate(d) { if (!d || d === '9999-12-31') return d === '9999-12-31' ? 'Perpétua' : '-'; const [y,m,day] = d.split('-'); return `${day}/${m}/${y}`; }
 function initials(nome) { return (nome||'??').split(' ').slice(0,2).map(n=>n[0]).join('').toUpperCase(); }
 const $ = (s,c=document) => c.querySelector(s);
 const $$ = (s,c=document) => [...c.querySelectorAll(s)];
-
 // ===== TOAST =====
 function toast(msg, type='success') {
   const icons = {success:'ti-circle-check', error:'ti-alert-circle', info:'ti-info-circle', warning:'ti-alert-triangle'};
@@ -270,7 +250,6 @@ function toast(msg, type='success') {
   tc.appendChild(t);
   setTimeout(()=>t.remove(), 3500);
 }
-
 function openModal(html, id='main-modal') {
   let o = $(`#${id}`); if(o) o.remove();
   o = document.createElement('div'); o.id=id; o.className='modal-overlay'; o.innerHTML=html;
@@ -287,9 +266,7 @@ function openModal(html, id='main-modal') {
   o.addEventListener('contextmenu', e=>{ if(e.target===o) e.stopPropagation(); });
 }
 function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
-
 // ===== PERSISTENCE =====
-
 function saveState() {
   try {
     localStorage.setItem('miro_ti_v2', JSON.stringify({
@@ -319,7 +296,6 @@ function loadState() {
     }
   } catch(e) {}
 }
-
 // ===== NOTIFICATIONS =====
 function addNotification(titulo, sub, icon='ti-info-circle') {
   STATE.notifications.unshift({ titulo, sub, icon, data: dateNow(), lida: false });
@@ -332,7 +308,6 @@ function updateNotifBadge() {
   const badge = $('.nav-badge[data-badge="chamados"]');
   if (badge) badge.textContent = STATE.chamados.filter(c=>c.status==='aberto').length;
 }
-
 // ===== RENDER =====
 function render() {
   const app = $('#app');
@@ -340,7 +315,6 @@ function render() {
   else { app.innerHTML = renderLayout(); attachLayoutEvents(); renderPage(STATE.currentPage); updateNotifBadge(); }
   window.scrollTo(0,0);
 }
-
 // ===== AUTH (sem cadastro público) =====
 function renderAuth() {
   return `
@@ -369,12 +343,10 @@ function renderAuth() {
     </div>
   </div>`;
 }
-
 function attachAuthEvents() {
   $('#btn-login').addEventListener('click', doLogin);
   $('#login-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 }
-
 async function doLogin() {
   const u = $('#login-user').value.trim();
   const p = $('#login-pass').value;
@@ -403,7 +375,6 @@ async function doLogin() {
   render();
   toast(`Bem-vindo, ${found.nome.split(' ')[0]}!`);
 }
-
 // ===== LAYOUT =====
 function renderLayout() {
   const u = STATE.currentUser;
@@ -411,7 +382,6 @@ function renderLayout() {
   const openCh = STATE.chamados.filter(c=>c.status==='aberto').length;
   const unreadNotifs = STATE.notifications.filter(n=>!n.lida).length;
   const licVencendo = STATE.licencas.filter(l=>l.status==='vencendo'||diasParaVencer(l.vencimento)<=30).length;
-
   return `
   <div class="app-layout">
     <aside class="sidebar">
@@ -444,7 +414,6 @@ function renderLayout() {
           ${licVencendo>0?`<span class="nav-badge" style="background:var(--warning)">${licVencendo}</span>`:''}
         </button>
         <span class="nav-section-title">Unidades</span>
-
         <!-- MATRIZ SUBMENU -->
         <button class="nav-item nav-group-toggle ${['matriz','mz-reservas','mz-chamados','mz-equipamentos','mz-licencas','mz-usuarios','mz-relatorios'].includes(STATE.currentPage)?'active':''}" onclick="toggleNavGroup('grupo-matriz')">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-4a3 3 0 0 1 6 0v4"/><rect x="9" y="10" width="2" height="3"/><rect x="13" y="10" width="2" height="3"/></svg>
@@ -460,7 +429,6 @@ function renderLayout() {
           <button class="nav-item nav-sub ${STATE.currentPage==='mz-usuarios'?'active':''}" data-page="mz-usuarios"><i class="ti ti-users"></i> Usuários</button>
           <button class="nav-item nav-sub ${STATE.currentPage==='mz-relatorios'?'active':''}" data-page="mz-relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
         </div>
-
         <!-- ENSINO MÉDIO SUBMENU -->
         <button class="nav-item nav-group-toggle ${['ensinomedio','em-reservas','em-chamados','em-equipamentos','em-licencas','em-usuarios','em-relatorios'].includes(STATE.currentPage)?'active':''}" onclick="toggleNavGroup('grupo-em')">
           <i class="ti ti-building"></i>
@@ -520,7 +488,6 @@ function renderLayout() {
     </div>
   </div>`;
 }
-
 function attachLayoutEvents() {
   $$('.nav-item[data-page]').forEach(btn => {
     btn.addEventListener('click', () => navigateTo(btn.dataset.page));
@@ -544,7 +511,6 @@ function attachLayoutEvents() {
     else openModalReserva();
   });
 }
-
 function navigateTo(page) {
   STATE.currentPage = page;
   const titles = { dashboard:'Dashboard', calendario:'Calendário', reservas:'Reservas', chamados:'Chamados', arquivados:'Arquivados', inventario:'Inventário TI', licencas:'Licenças de Software', matriz:'Matriz — Visão Geral', ensinomedio:'Ensino Médio — Visão Geral', equipamentos:'Equipamentos', usuarios:'Usuários', relatorios:'Relatórios & Gráficos', novaReserva:'Nova Reserva', novoChamado:'Abrir Chamado', meuschamados:'Meus Chamados', 'mz-reservas':'Matriz — Reservas', 'mz-chamados':'Matriz — Chamados', 'mz-equipamentos':'Matriz — Equipamentos', 'mz-licencas':'Matriz — Licenças', 'mz-usuarios':'Matriz — Usuários', 'mz-relatorios':'Matriz — Relatórios', 'em-reservas':'Ensino Médio — Reservas', 'em-chamados':'Ensino Médio — Chamados', 'em-equipamentos':'Ensino Médio — Equipamentos', 'em-licencas':'Ensino Médio — Licenças', 'em-usuarios':'Ensino Médio — Usuários', 'em-relatorios':'Ensino Médio — Relatórios', 'compras':'Compras de TI', 'reservas-ativas':'Reservas Abertas' };
@@ -554,7 +520,6 @@ function navigateTo(page) {
   renderPage(page);
   window.scrollTo(0,0);
 }
-
 function renderPage(page) {
   const content = $('#page-content');
   if (!content) return;
@@ -578,7 +543,6 @@ function renderPage(page) {
   content.innerHTML = pages[page] ? pages[page]() : '<p>Página não encontrada.</p>';
   attachPageEvents(page);
 }
-
 function attachPageEvents(page) {
   if (page==='dashboard') setTimeout(()=>{ renderChartStatus(); renderChartCat(); renderChartTendencia(); }, 100);
   if (page==='reservas') attachTableFilter('search-reserva', 'filter-reserva-status', 'reservas-tbody', ()=>renderReservasRows(getFilteredReservas()));
@@ -595,30 +559,24 @@ function attachPageEvents(page) {
   if (page==='mz-relatorios') setTimeout(()=>renderUnidadeCharts('Matriz'),200);
   if (page==='em-relatorios') setTimeout(()=>renderUnidadeCharts('Ensino Médio'),200);
 }
-
 function attachChamadoFilters() {
   const search  = $('#search-chamado');
   const fStatus = $('#filter-chamado-status');
   const fPrio   = $('#filter-chamado-prio');
   const tbody   = $('#chamados-tbody');
-
   // Restaurar filtros salvos
   if (search  && STATE.filtros.chamadoSearch) search.value  = STATE.filtros.chamadoSearch;
   if (fStatus && STATE.filtros.chamado)       fStatus.value = STATE.filtros.chamado;
   if (fPrio   && STATE.filtros.chamadoPrio)   fPrio.value   = STATE.filtros.chamadoPrio;
-
   const refresh = () => {
     if (tbody) tbody.innerHTML = renderChamadosRows(getFilteredChamados());
   };
-
   // Aplicar filtro atual imediatamente (restauração)
   refresh();
-
   if (search)  search.addEventListener('input',  () => { STATE.filtros.chamadoSearch = search.value;  refresh(); });
   if (fStatus) fStatus.addEventListener('change', () => { STATE.filtros.chamado       = fStatus.value; refresh(); });
   if (fPrio)   fPrio.addEventListener('change',   () => { STATE.filtros.chamadoPrio   = fPrio.value;   refresh(); });
 }
-
 function attachTableFilter(searchId, filterId, tbodyId, getFn) {
   const s=$(`#${searchId}`), f=$(`#${filterId}`);
   // Restaurar filtros salvos
@@ -635,7 +593,6 @@ function attachTableFilter(searchId, filterId, tbodyId, getFn) {
     const el=$(`#${tbodyId}`); if(el) el.innerHTML=getFn();
   });
 }
-
 // ===== NOTIFICATION PANEL =====
 function showNotifPanel() {
   const existing=$('.notif-panel'); if(existing){existing.remove();return;}
@@ -655,7 +612,6 @@ function showNotifPanel() {
   setTimeout(updateNotifBadge,100);
   document.addEventListener('click',()=>panel.remove(),{once:true});
 }
-
 // ===== DASHBOARD USUÁRIO COMUM =====
 function dashboardUsuario() {
   const u = STATE.currentUser;
@@ -665,7 +621,6 @@ function dashboardUsuario() {
   const chamadosAbertos = meusChamados.filter(c => c.status === 'aberto' || c.status === 'andamento');
   const hoje = dateNow();
   const reservasHoje = reservasAtivas.filter(r => r.dataInicio === hoje);
-
   return `
   <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
     <div class="stat-card clickable" onclick="navigateTo('novaReserva')">
@@ -688,7 +643,6 @@ function dashboardUsuario() {
       <div class="stat-info"><div class="stat-number">${reservasHoje.length}</div><div class="stat-label">Reservas Hoje</div></div>
     </div>
   </div>
-
   <div class="grid-2 mb-20" style="margin-top:0">
     <div class="card">
       <div class="card-header" style="background:var(--primary-light)">
@@ -711,7 +665,6 @@ function dashboardUsuario() {
             </div>`).join('')}
       </div>
     </div>
-
     <div class="card">
       <div class="card-header" style="background:var(--primary-light)">
         <span class="card-title"><i class="ti ti-headset" style="color:var(--primary)"></i> Meus Chamados</span>
@@ -735,7 +688,6 @@ function dashboardUsuario() {
     </div>
   </div>`;
 }
-
 // ===== DASHBOARD =====
 function dashboard() {
   if (STATE.currentUser && STATE.currentUser.role !== 'admin') return dashboardUsuario();
@@ -746,7 +698,6 @@ function dashboard() {
   const fechados = STATE.chamados.filter(c=>c.status==='fechado').length;
   const reservasAtivas = STATE.reservas.filter(r=>r.status==='ativo').length;
   const licVencendo = STATE.licencas.filter(l=>diasParaVencer(l.vencimento)<=30 && l.status!=='expirado').length;
-
   return `
   <div class="stats-grid">
     <div class="stat-card clickable" onclick="navigateTo('reservas-ativas')">
@@ -780,7 +731,6 @@ function dashboard() {
       <i class="ti ti-arrow-right stat-arrow"></i>
     </div>
   </div>
-
   <!-- RESERVAS DO DIA EM DESTAQUE -->
   <div class="card mb-20" style="border-left:4px solid var(--primary)">
     <div class="card-header" style="background:var(--primary-light)">
@@ -808,7 +758,6 @@ function dashboard() {
             </tbody></table>`}
     </div>
   </div>
-
   <!-- RESERVAS ABERTAS (não do dia de hoje) -->
   ${(() => {
     const abertas = sortByDate(STATE.reservas.filter(r=>r.status==='ativo'&&r.dataInicio!==hoje));
@@ -847,7 +796,6 @@ function dashboard() {
       </div>
     </div>`;
   })()}
-
   <div class="grid-2 mb-20">
     <div class="card">
       <div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Status dos Chamados</span></div>
@@ -858,7 +806,6 @@ function dashboard() {
       <div class="card-body"><div class="chart-container"><canvas id="chart-tendencia"></canvas></div></div>
     </div>
   </div>
-
   <div class="grid-2">
     <div class="card" style="display:none"><div class="card-body"></div></div>
     <div class="card">
@@ -880,7 +827,6 @@ function dashboard() {
     </div>
   </div>`;
 }
-
 function renderChartStatus() {
   const ctx=document.getElementById('chart-status'); if(!ctx) return;
   new Chart(ctx, { type:'doughnut', data:{ labels:['Aberto','Em Andamento','Fechado','Suspenso'], datasets:[{ data:[STATE.chamados.filter(c=>c.status==='aberto').length, STATE.chamados.filter(c=>c.status==='andamento').length, STATE.chamados.filter(c=>c.status==='fechado').length, STATE.chamados.filter(c=>c.status==='suspenso').length], backgroundColor:['#e74c3c','#e67e22','#27ae60','#95a5a6'], borderWidth:0 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Nunito', size:12 } } } } } });
@@ -913,14 +859,12 @@ function renderChartTendencia() {
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Nunito', size: 12 } } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
   });
 }
-
 function renderChartCat() {
   const ctx=document.getElementById('chart-cat'); if(!ctx) return;
   const cats={};
   STATE.chamados.forEach(c=>{ cats[c.categoria]=(cats[c.categoria]||0)+1; });
   new Chart(ctx, { type:'bar', data:{ labels:Object.keys(cats), datasets:[{ label:'Chamados', data:Object.values(cats), backgroundColor:'#0073c8', borderRadius:6 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 } } } } });
 }
-
 // ===== CALENDÁRIO =====
 function calendario() {
   const now = new Date();
@@ -941,7 +885,6 @@ function calendario() {
     <div id="cal-list"></div>
   </div>`;
 }
-
 function renderCalendario() {
   if (!$('#cal-grid')) return;
   let current = new Date();
@@ -978,13 +921,10 @@ function renderCalendario() {
   if(prev) prev.addEventListener('click',()=>{ current=new Date(current.getFullYear(),current.getMonth()-1,1); build(); });
   if(next) next.addEventListener('click',()=>{ current=new Date(current.getFullYear(),current.getMonth()+1,1); build(); });
 }
-
 function openModalReservaData(ds) { openModalReserva(null, ds); }
-
 // ===== RESERVAS =====
 const CARGOS=['Administrativo','Aluno','Assistente','Coordenador(a)','Diretor(a)','Estagiário(a)','Professor(a)'];
 const SALAS=['Grupo 1','Grupo 2','Grupo 3','Grupo 4','Grupo 5','1º Ano','2º Ano','3º Ano','4º Ano','5º Ano','6º Ano','7º Ano','8º Ano','9º Ano','1º Ano EM','2º Ano EM','3º Ano EM','Aula de Apoio','Reunião','Outro'];
-
 // ===== AULAS — horários padrão =====
 const AULAS = [
   { id: 'a1', label: '1ª Aula', inicio: '07:00', fim: '07:50' },
@@ -993,13 +933,11 @@ const AULAS = [
   { id: 'a4', label: '4ª Aula', inicio: '09:30', fim: '10:20' },
 ];
 const HORAS=(()=>{const h=[];for(let i=6;i<24;i++)for(let m=0;m<60;m+=5)h.push(`${String(i).padStart(2,'0')}:${String(m).padStart(2,'0')}`);return h;})();
-
 function getFilteredReservas() {
   const q=($('#search-reserva')?.value||'').toLowerCase();
   const st=$('#filter-reserva-status')?.value||'';
   return STATE.reservas.filter(r=>(!q||r.equipamento.toLowerCase().includes(q)||r.solicitante.toLowerCase().includes(q))&&(!st||r.status===st));
 }
-
 function reservas() {
   return `
   <div class="filter-bar">
@@ -1016,7 +954,6 @@ function reservas() {
     <tbody id="reservas-tbody">${renderReservasRows(STATE.reservas)}</tbody></table></div>
   </div>`;
 }
-
 function renderReservasRows(list) {
   list = sortByDate(list);
   if (!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva encontrada</h3></div></td></tr>`;
@@ -1046,14 +983,12 @@ function renderReservasRows(list) {
     </td>
   </tr>`).join('');
 }
-
 // ===== CHAMADOS =====
 function getFilteredChamados() {
   // Lê dos elementos OU dos filtros salvos no STATE
   const q    = ($('#search-chamado')?.value  ?? STATE.filtros.chamadoSearch ?? '').toLowerCase();
   const st   = $('#filter-chamado-status')?.value ?? STATE.filtros.chamado   ?? '';
   const prio = $('#filter-chamado-prio')?.value   ?? STATE.filtros.chamadoPrio ?? '';
-
   return STATE.chamados.filter(c => {
     // Sem filtro de status: esconde fechados/cancelados por padrão
     if (!st && (c.status === 'fechado' || c.status === 'cancelado')) return false;
@@ -1063,7 +998,6 @@ function getFilteredChamados() {
     return true;
   });
 }
-
 function chamados() {
   const ativos=STATE.chamados.filter(c=>c.status!=='fechado'&&c.status!=='cancelado');
   return `
@@ -1079,9 +1013,7 @@ function chamados() {
     <tbody id="chamados-tbody">${renderChamadosRows(ativos)}</tbody></table></div>
   </div>`;
 }
-
 function prioColor(p){ return p==='Alta'?'#e74c3c':p==='Media'?'#e67e22':'#27ae60'; }
-
 function renderChamadosRows(list) {
   if (!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Nenhum chamado ativo</h3></div></td></tr>`;
   return list.map(c=>`
@@ -1112,7 +1044,6 @@ function renderChamadosRows(list) {
     </td>
   </tr>`).join('');
 }
-
 // ===== ARQUIVADOS =====
 function arquivados() {
   return `
@@ -1145,10 +1076,8 @@ function renderArqReservas() {
     <button class="btn-icon" onclick="deleteReserva(${r.id});renderPage('arquivados')" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
   </div></td></tr>`).join('')}</tbody></table></div></div>`;
 }
-
 // ===== INVENTÁRIO TI =====
 const INV_CATS=['Rede','Impressora','Computador','Notebook','Monitor','Servidor','Câmera','Telefone IP','No-break','Access Point','Outro'];
-
 function inventario() {
   return `
   <div class="filter-bar">
@@ -1170,9 +1099,7 @@ function inventario() {
     <tbody id="inv-tbody">${renderInvRows(STATE.inventario)}</tbody></table></div>
   </div>`;
 }
-
 function invIcon(c){ const m={Rede:'network',Impressora:'printer',Computador:'desktop',Notebook:'device-laptop',Monitor:'device-desktop',Servidor:'server',Câmera:'camera',NoBreak:'plug','Access Point':'wifi',Telefone:'phone'}; return m[c]||'device-floppy'; }
-
 function renderInvRows(list) {
   if(!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item no inventário</h3></div></td></tr>`;
   return list.map(i=>`
@@ -1192,7 +1119,6 @@ function renderInvRows(list) {
     </div></td>
   </tr>`).join('');
 }
-
 function attachInvFilter() {
   const s=$('#search-inv'), fc=$('#filter-inv-cat'), fu=$('#filter-inv-uni');
   function applyFilter(){
@@ -1204,13 +1130,11 @@ function attachInvFilter() {
   if(fc) fc.addEventListener('change',applyFilter);
   if(fu) fu.addEventListener('change',applyFilter);
 }
-
 // ===== LICENÇAS =====
 function diasParaVencer(d) {
   if (!d || d==='9999-12-31') return 9999;
   return Math.ceil((new Date(d)-new Date())/86400000);
 }
-
 function licencas() {
   return `
   <div class="filter-bar">
@@ -1233,7 +1157,6 @@ function licencas() {
     <tbody id="lic-tbody">${renderLicRows(STATE.licencas)}</tbody></table></div>
   </div>`;
 }
-
 function renderLicRows(list) {
   if(!list.length) return `<tr><td colspan="11"><div class="empty-state"><i class="ti ti-license-off"></i><h3>Nenhuma licença cadastrada</h3></div></td></tr>`;
   return list.map(l=>{
@@ -1260,11 +1183,9 @@ function renderLicRows(list) {
     </tr>`;
   }).join('');
 }
-
 // ===== UNIDADES =====
 function matriz() { return renderUnidadePage('Matriz'); }
 function ensinomedio() { return renderUnidadePage('Ensino Médio'); }
-
 function renderUnidadePage(unidade) {
   const equips=STATE.equipamentos.filter(e=>e.unidade===unidade);
   const reservas=STATE.reservas.filter(r=>(r.unidade||'Matriz')===unidade&&r.status==='ativo');
@@ -1288,7 +1209,6 @@ function renderUnidadePage(unidade) {
     <tbody id="unid-tbody">${renderUnidadeEquips(equips)}</tbody></table></div>
   </div>`;
 }
-
 function renderUnidadeEquips(list) {
   if(!list.length) return `<tr><td colspan="7"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento cadastrado</h3></div></td></tr>`;
   return list.map(e=>`<tr>
@@ -1303,7 +1223,6 @@ function renderUnidadeEquips(list) {
     </div></td>
   </tr>`).join('');
 }
-
 function attachUnidadeFilter(unidade) {
   const s=$('#search-unid'), ft=$('#filter-unid-tipo');
   function applyFilter(){
@@ -1314,7 +1233,6 @@ function attachUnidadeFilter(unidade) {
   if(s) s.addEventListener('input',applyFilter);
   if(ft) ft.addEventListener('change',applyFilter);
 }
-
 // ===== EQUIPAMENTOS (admin geral) =====
 function equipamentos() {
   return `
@@ -1330,9 +1248,7 @@ function equipamentos() {
     <tbody id="equip-tbody">${renderEquipRows(STATE.equipamentos)}</tbody></table></div>
   </div>`;
 }
-
 function equipStatus(s){ const m={disponivel:'badge-fechado',reservado:'badge-reservado',manutencao:'badge-andamento',inativo:'badge-suspenso'}; const l={disponivel:'Disponível',reservado:'Reservado',manutencao:'Manutenção',inativo:'Inativo'}; return `<span class="badge ${m[s]||'badge-cancelado'}">${l[s]||s}</span>`; }
-
 function renderEquipRows(list) {
   if(!list.length) return `<tr><td colspan="9"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>`;
   return list.map(e=>`<tr>
@@ -1347,7 +1263,6 @@ function renderEquipRows(list) {
     </div></td>
   </tr>`).join('');
 }
-
 function attachEquipFilter() {
   const s=$('#search-equip'), ft=$('#filter-equip-tipo'), fu=$('#filter-equip-uni');
   function applyFilter(){
@@ -1359,7 +1274,6 @@ function attachEquipFilter() {
   if(ft) ft.addEventListener('change',applyFilter);
   if(fu) fu.addEventListener('change',applyFilter);
 }
-
 // ===== USUÁRIOS =====
 function usuarios() {
   return `
@@ -1374,7 +1288,6 @@ function usuarios() {
     <tbody id="users-tbody">${renderUserRows(STATE.users)}</tbody></table></div>
   </div>`;
 }
-
 function renderUserRows(list) {
   const q=($('#search-user')?.value||'').toLowerCase();
   const st=$('#filter-user-status')?.value||'';
@@ -1395,7 +1308,6 @@ function renderUserRows(list) {
     </div></td>
   </tr>`).join('');
 }
-
 // ===== PÁGINAS DE USUÁRIO NORMAL =====
 function reservasAtivasPage() {
   const list = STATE.reservas.filter(r=>r.status==='ativo');
@@ -1421,13 +1333,11 @@ function reservasAtivasPage() {
     </div>
   </div>`;
 }
-
 function diaSemanaPT(dataISO) {
   const d = new Date((dataISO||'') + 'T12:00:00');
   if (isNaN(d)) return '';
   return d.toLocaleDateString('pt-BR', { weekday: 'long' }).toUpperCase();
 }
-
 function renderResAtivas(list) {
   list = sortByDate(list);
   if(!list.length) return `<tr><td colspan="8"><div class="empty-state"><i class="ti ti-calendar-check"></i><h3>Nenhuma reserva aberta</h3><p>Todas as reservas foram fechadas!</p></div></td></tr>`;
@@ -1442,7 +1352,6 @@ function renderResAtivas(list) {
   }
   return html;
 }
-
 function resAtivaRow(r) {
   return `
   <tr>
@@ -1463,14 +1372,12 @@ function resAtivaRow(r) {
     </td>
   </tr>`;
 }
-
 function filtrarResAtivas(q) {
   const search=(typeof q==='string'?q:($('#search-res-ativas')?.value||'')).toLowerCase();
   const uni=$('#filter-res-ativas-uni')?.value||'';
   const list=sortByDate(STATE.reservas.filter(r=>r.status==='ativo'&&(!search||r.equipamento.toLowerCase().includes(search)||r.solicitante.toLowerCase().includes(search)||r.sala.toLowerCase().includes(search))&&(!uni||(r.unidade||'Matriz')===uni)));
   const tb=$('#tbody-res-ativas'); if(tb) tb.innerHTML=renderResAtivas(list);
 }
-
 function novaReserva() { setTimeout(()=>openModalReserva(),100); return `<div class="empty-state" style="padding:80px"><i class="ti ti-calendar-plus" style="font-size:56px;color:var(--primary)"></i><h3>Abrindo formulário de reserva...</h3></div>`; }
 function novoChamado() { setTimeout(()=>openModalChamado(),100); return `<div class="empty-state" style="padding:80px"><i class="ti ti-headset" style="font-size:56px;color:var(--primary)"></i><h3>Abrindo formulário de chamado...</h3></div>`; }
 function meuschamados() {
@@ -1484,7 +1391,6 @@ function meuschamados() {
     <tr><td><strong style="color:var(--primary)">#${c.id}</strong></td><td><strong>${c.titulo}</strong><br><span class="text-muted">${c.descricao.slice(0,40)}...</span></td><td>${c.categoria}</td><td><span style="color:${prioColor(c.prioridade)};font-weight:700">${c.prioridade}</span></td><td><span class="badge badge-${c.status}">${c.status}</span></td><td>${formatDate(c.criado)}</td><td>${formatDate(c.atualizado)}</td></tr>`).join('')}</tbody></table></div>
   </div>`;
 }
-
 // ===== RELATÓRIOS =====
 function relatorios() {
   const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -1548,13 +1454,11 @@ function relatorios() {
     </div>
     </div>
   </div>
-
   <!-- ÁREA DO RELATÓRIO -->
   <div id="rel-content">
     ${renderRelGraficos()}
   </div>`;
 }
-
 // ============================================================
 // MODO: GRÁFICOS
 // ============================================================
@@ -1570,7 +1474,6 @@ function renderRelGraficos() {
   const licVencendo = STATE.licencas.filter(l=>diasParaVencer(l.vencimento)<=30&&diasParaVencer(l.vencimento)>0).length;
   const chAbertos = STATE.chamados.filter(c=>c.status==='aberto').length;
   const chFechados = STATE.chamados.filter(c=>c.status==='fechado').length;
-
   return `
   <!-- CABEÇALHO INSTITUCIONAL -->
   <div class="rel-print-header">
@@ -1583,7 +1486,6 @@ function renderRelGraficos() {
       <p>Responsável TI: <strong>Tiago Souza</strong> &nbsp;|&nbsp; Emitido em: <strong>${now}, ${hora}</strong></p>
     </div>
   </div>
-
   <!-- KPIs GERAIS -->
   <div class="rel-kpi-grid">
     <div class="rel-kpi blue"><div class="rel-kpi-num">${totalCh}</div><div class="rel-kpi-label">Total de Chamados</div></div>
@@ -1595,7 +1497,6 @@ function renderRelGraficos() {
     <div class="rel-kpi blue"><div class="rel-kpi-num">${totalLic}</div><div class="rel-kpi-label">Licenças de Software</div></div>
     <div class="rel-kpi ${licVencendo>0?'red':'green'}"><div class="rel-kpi-num">${licVencendo}</div><div class="rel-kpi-label">Licenças a Vencer</div></div>
   </div>
-
   <!-- GRÁFICOS LINHA 1 -->
   <div class="grid-2 mb-20">
     <div class="card">
@@ -1607,7 +1508,6 @@ function renderRelGraficos() {
       <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-status-rel"></canvas></div></div>
     </div>
   </div>
-
   <!-- GRÁFICOS LINHA 2 -->
   <div class="grid-2 mb-20">
     <div class="card">
@@ -1619,7 +1519,6 @@ function renderRelGraficos() {
       <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-cat-rel"></canvas></div></div>
     </div>
   </div>
-
   <!-- GRÁFICOS LINHA 3 -->
   <div class="grid-2 mb-20">
     <div class="card">
@@ -1631,7 +1530,6 @@ function renderRelGraficos() {
       <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-user"></canvas></div></div>
     </div>
   </div>
-
   <!-- GRÁFICOS LINHA 4 -->
   <div class="grid-2 mb-20">
     <div class="card">
@@ -1643,7 +1541,6 @@ function renderRelGraficos() {
       <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-lic"></canvas></div></div>
     </div>
   </div>
-
   <!-- GRÁFICOS LINHA 5 -->
   <div class="grid-2 mb-20">
     <div class="card">
@@ -1655,14 +1552,12 @@ function renderRelGraficos() {
       <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-res-mensal"></canvas></div></div>
     </div>
   </div>
-
   <!-- RODAPÉ DE IMPRESSÃO -->
   <div class="rel-print-footer">
     <p>TI - Escola Miró &nbsp;|&nbsp; Responsável: Tiago Souza &nbsp;|&nbsp; Gerado em: ${now}, ${hora}</p>
     <p>Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.</p>
   </div>`;
 }
-
 // ============================================================
 // MODO: DADOS
 // ============================================================
@@ -1671,7 +1566,6 @@ function renderRelDados(tipo) {
   const map = { geral: renderRelGeral2, chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas, equipamentos: renderRelEquipamentos };
   return map[tipo] ? map[tipo]() : '';
 }
-
 function setRelMode(modo) {
   document.getElementById('btn-modo-graficos')?.classList.toggle('active', modo==='graficos');
   document.getElementById('btn-modo-dados')?.classList.toggle('active', modo==='dados');
@@ -1687,12 +1581,10 @@ function setRelMode(modo) {
     el.innerHTML = renderRelDados(tipo);
   }
 }
-
 function switchRelatorio(tipo) {
   const el = document.getElementById('rel-content');
   if (el) el.innerHTML = renderRelDados(tipo);
 }
-
 function gerarRelatorio() {
   const modoGraf = document.getElementById('btn-modo-graficos')?.classList.contains('active');
   const el = document.getElementById('rel-content');
@@ -1706,7 +1598,6 @@ function gerarRelatorio() {
   }
   toast('Relatório atualizado!', 'success');
 }
-
 function getRelFiltros() {
   return {
     uni: document.getElementById('rel-uni')?.value || '',
@@ -1715,7 +1606,6 @@ function getRelFiltros() {
     ate: document.getElementById('rel-ate')?.value || '',
   };
 }
-
 function filterByDate(list, campo, de, ate) {
   return list.filter(item => {
     const d = item[campo] || '';
@@ -1724,7 +1614,6 @@ function filterByDate(list, campo, de, ate) {
     return true;
   });
 }
-
 // ============================================================
 // HELPER: cabeçalho de impressão por tipo
 // ============================================================
@@ -1743,17 +1632,14 @@ function relPrintHeader(titulo) {
     </div>
   </div>`;
 }
-
 function relPrintFooter() {
   const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
   const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   return `<div class="rel-print-footer"><p>TI - Escola Miró &nbsp;|&nbsp; Responsável: Tiago Souza &nbsp;|&nbsp; ${now} às ${hora}</p><p>Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.</p></div>`;
 }
-
 // ============================================================
 // RELATÓRIO: CHAMADOS
 // ============================================================
-
 // ============================================================
 // RELATÓRIO GERAL (dados): Chamados + Reservas combinados
 // ============================================================
@@ -1773,14 +1659,12 @@ function renderRelGeral2() {
     <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
     ${f.de||f.ate?`<span class="rel-filter-tag">${f.de?formatDate(f.de):''} ${f.ate?'até '+formatDate(f.ate):''}</span>`:''}
   </div>
-
   <div class="rel-kpi-grid" style="grid-template-columns:repeat(4,1fr)">
     <div class="rel-kpi blue"><div class="rel-kpi-num">${chamados.length}</div><div class="rel-kpi-label">Total Chamados</div></div>
     <div class="rel-kpi red"><div class="rel-kpi-num">${chamados.filter(c=>c.status==='aberto').length}</div><div class="rel-kpi-label">Chamados Abertos</div></div>
     <div class="rel-kpi green"><div class="rel-kpi-num">${reservas.length}</div><div class="rel-kpi-label">Total Reservas</div></div>
     <div class="rel-kpi teal"><div class="rel-kpi-num">${reservas.filter(r=>r.status==='ativo').length}</div><div class="rel-kpi-label">Reservas Ativas</div></div>
   </div>
-
   <!-- CHAMADOS -->
   <div class="card mb-20">
     <div class="card-header" style="background:var(--primary);padding:14px 20px">
@@ -1809,7 +1693,6 @@ function renderRelGeral2() {
       </table>
     </div>
   </div>
-
   <!-- RESERVAS -->
   <div class="card mb-20">
     <div class="card-header" style="background:var(--primary);padding:14px 20px">
@@ -1842,7 +1725,6 @@ function renderRelGeral2() {
   </div>
   ${relPrintFooter()}`;
 }
-
 function renderRelChamados() {
   const f = getRelFiltros();
   let list = STATE.chamados;
@@ -1868,7 +1750,6 @@ function renderRelChamados() {
     <span class="rel-filter-tag"><i class="ti ti-calendar"></i> ${periodo}</span>
     ${f.st ? `<span class="rel-filter-tag"><i class="ti ti-circle"></i> Status: ${f.st}</span>` : ''}
   </div>
-
   <!-- KPIs -->
   <div class="rel-kpi-grid">
     <div class="rel-kpi blue"><div class="rel-kpi-num">${total}</div><div class="rel-kpi-label">Total de Chamados</div></div>
@@ -1880,7 +1761,6 @@ function renderRelChamados() {
     <div class="rel-kpi orange"><div class="rel-kpi-num">${media}</div><div class="rel-kpi-label">Prioridade Média</div></div>
     <div class="rel-kpi green"><div class="rel-kpi-num">${baixa}</div><div class="rel-kpi-label">Prioridade Baixa</div></div>
   </div>
-
   <!-- TABELA COMPLETA -->
   <div class="card mb-20">
     <div class="card-header" style="background:var(--primary);padding:14px 20px">
@@ -1926,7 +1806,6 @@ function renderRelChamados() {
   </div>
   ${relPrintFooter()}`;
 }
-
 // ============================================================
 // RELATÓRIO: RESERVAS
 // ============================================================
@@ -1952,7 +1831,6 @@ function renderRelReservas() {
     <span class="rel-filter-tag"><i class="ti ti-calendar"></i> ${periodo}</span>
     ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
   </div>
-
   <div class="rel-kpi-grid">
     <div class="rel-kpi blue"><div class="rel-kpi-num">${total}</div><div class="rel-kpi-label">Total de Reservas</div></div>
     <div class="rel-kpi green"><div class="rel-kpi-num">${ativas}</div><div class="rel-kpi-label">Reservas Ativas</div></div>
@@ -1963,7 +1841,6 @@ function renderRelReservas() {
     <div class="rel-kpi blue"><div class="rel-kpi-num">${solicitDistintos}</div><div class="rel-kpi-label">Solicitantes Distintos</div></div>
     <div class="rel-kpi teal"><div class="rel-kpi-num">${[...new Set(list.map(r=>r.sala))].length}</div><div class="rel-kpi-label">Salas/Turmas</div></div>
   </div>
-
   <div class="card mb-20">
     <div class="card-header" style="background:var(--primary);padding:14px 20px">
       <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-calendar-event"></i> Reservas — Detalhamento Completo (${total} registros)</span>
@@ -2022,7 +1899,6 @@ function renderRelReservas() {
   </div>
   ${relPrintFooter()}`;
 }
-
 // ============================================================
 // RELATÓRIO: INVENTÁRIO
 // ============================================================
@@ -2040,7 +1916,6 @@ function renderRelInventario() {
     <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
     ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
   </div>
-
   <div class="rel-kpi-grid">
     <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Total de Itens</div></div>
     <div class="rel-kpi green"><div class="rel-kpi-num">${list.filter(i=>i.status==='ativo').length}</div><div class="rel-kpi-label">Ativos</div></div>
@@ -2051,7 +1926,6 @@ function renderRelInventario() {
     <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(i=>diasParaVencer(i.garantia)<90&&diasParaVencer(i.garantia)>0).length}</div><div class="rel-kpi-label">Garantia a Vencer</div></div>
     <div class="rel-kpi purple"><div class="rel-kpi-num">${Object.keys(cats).length}</div><div class="rel-kpi-label">Categorias</div></div>
   </div>
-
   <!-- SUMÁRIO POR CATEGORIA -->
   <div class="card mb-20">
     <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Resumo por Categoria</span></div>
@@ -2065,7 +1939,6 @@ function renderRelInventario() {
       </div>
     </div>
   </div>
-
   <div class="card mb-20">
     <div class="card-header" style="background:var(--primary);padding:14px 20px">
       <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-server"></i> Inventário Completo — Todos os Campos (${list.length} itens)</span>
@@ -2117,7 +1990,6 @@ function renderRelInventario() {
   </div>
   ${relPrintFooter()}`;
 }
-
 // ============================================================
 // RELATÓRIO: LICENÇAS
 // ============================================================
@@ -2135,7 +2007,6 @@ function renderRelLicencas() {
     <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
     ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
   </div>
-
   <div class="rel-kpi-grid">
     <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Total de Licenças</div></div>
     <div class="rel-kpi green"><div class="rel-kpi-num">${list.filter(l=>l.status==='ativo').length}</div><div class="rel-kpi-label">Ativas</div></div>
@@ -2146,7 +2017,6 @@ function renderRelLicencas() {
     <div class="rel-kpi blue"><div class="rel-kpi-num">${list.filter(l=>diasParaVencer(l.vencimento)<=90&&diasParaVencer(l.vencimento)>0).length}</div><div class="rel-kpi-label">Vencem em 90 dias</div></div>
     <div class="rel-kpi teal"><div class="rel-kpi-num">${list.filter(l=>l.vencimento==='9999-12-31').length}</div><div class="rel-kpi-label">Perpétuas</div></div>
   </div>
-
   <div class="card mb-20">
     <div class="card-header" style="background:var(--primary);padding:14px 20px">
       <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-license"></i> Licenças de Software — Detalhamento Completo (${list.length})</span>
@@ -2208,7 +2078,6 @@ function renderRelLicencas() {
   </div>
   ${relPrintFooter()}`;
 }
-
 // ============================================================
 // RELATÓRIO: EQUIPAMENTOS
 // ============================================================
@@ -2225,7 +2094,6 @@ function renderRelEquipamentos() {
     <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
     ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
   </div>
-
   <div class="rel-kpi-grid">
     <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Tipos Cadastrados</div></div>
     <div class="rel-kpi teal"><div class="rel-kpi-num">${qtdTotal}</div><div class="rel-kpi-label">Quantidade Total</div></div>
@@ -2236,7 +2104,6 @@ function renderRelEquipamentos() {
     <div class="rel-kpi blue"><div class="rel-kpi-num">${list.filter(e=>e.unidade==='Matriz').length}</div><div class="rel-kpi-label">Unidade Matriz</div></div>
     <div class="rel-kpi purple"><div class="rel-kpi-num">${list.filter(e=>e.unidade==='Ensino Médio').length}</div><div class="rel-kpi-label">Ensino Médio</div></div>
   </div>
-
   <div class="card mb-20">
     <div class="card-header" style="background:var(--primary);padding:14px 20px">
       <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-devices"></i> Equipamentos — Detalhamento Completo (${list.length} registros | ${qtdTotal} unidades)</span>
@@ -2288,57 +2155,44 @@ function renderRelEquipamentos() {
   </div>
   ${relPrintFooter()}`;
 }
-
 function renderRelatorioCharts() {
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-
   // Chart: chamados por mês
   const ctx1=document.getElementById('chart-mensal');
   if(ctx1) new Chart(ctx1,{type:'line',data:{labels:meses,datasets:[{label:'Chamados',data:meses.map(()=>Math.floor(Math.random()*8)+1),borderColor:'#0073c8',backgroundColor:'rgba(0,115,200,.1)',tension:.4,fill:true,pointRadius:5,pointBackgroundColor:'#0073c8'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
-
   // Chart: status chamados
   const ctx_st=document.getElementById('chart-status-rel');
   if(ctx_st) new Chart(ctx_st,{type:'doughnut',data:{labels:['Aberto','Em Andamento','Fechado','Suspenso'],datasets:[{data:[STATE.chamados.filter(c=>c.status==='aberto').length,STATE.chamados.filter(c=>c.status==='andamento').length,STATE.chamados.filter(c=>c.status==='fechado').length,STATE.chamados.filter(c=>c.status==='suspenso').length],backgroundColor:['#e74c3c','#e67e22','#27ae60','#95a5a6'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
-
   // Chart: prioridade
   const ctx2=document.getElementById('chart-prio');
   if(ctx2) new Chart(ctx2,{type:'pie',data:{labels:['Alta','Média','Baixa'],datasets:[{data:[STATE.chamados.filter(c=>c.prioridade==='Alta').length,STATE.chamados.filter(c=>c.prioridade==='Media').length,STATE.chamados.filter(c=>c.prioridade==='Baixa').length],backgroundColor:['#e74c3c','#e67e22','#27ae60'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
-
   // Chart: por categoria
   const cats_={};STATE.chamados.forEach(c=>{cats_[c.categoria]=(cats_[c.categoria]||0)+1;});
   const ctx_cat=document.getElementById('chart-cat-rel');
   if(ctx_cat) new Chart(ctx_cat,{type:'bar',data:{labels:Object.keys(cats_),datasets:[{label:'Chamados',data:Object.values(cats_),backgroundColor:['#0073c8','#27ae60','#e67e22','#e74c3c','#7b1fa2','#009688'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
-
   // Chart: uso por equipamento
   const eu={};STATE.reservas.forEach(r=>{eu[r.equipamentoTipo]=(eu[r.equipamentoTipo]||0)+1;});
   const ctx3=document.getElementById('chart-equip-uso');
   if(ctx3) new Chart(ctx3,{type:'bar',data:{labels:Object.keys(eu),datasets:[{label:'Reservas',data:Object.values(eu),backgroundColor:'#0073c8',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
-
   // Chart: chamados por usuário
   const uu={};STATE.chamados.forEach(c=>{const n=c.solicitante.split(' ')[0];uu[n]=(uu[n]||0)+1;});
   const ctx4=document.getElementById('chart-user');
   if(ctx4) new Chart(ctx4,{type:'bar',data:{labels:Object.keys(uu),datasets:[{label:'Chamados',data:Object.values(uu),backgroundColor:['#0073c8','#27ae60','#e67e22','#7b1fa2'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
-
   // Chart: por unidade
   const unid={Matriz:STATE.chamados.filter(c=>(c.unidade||'Matriz')==='Matriz').length,'Ensino Médio':STATE.chamados.filter(c=>c.unidade==='Ensino Médio').length};
   const ctx5=document.getElementById('chart-unidade');
   if(ctx5) new Chart(ctx5,{type:'doughnut',data:{labels:Object.keys(unid),datasets:[{data:Object.values(unid),backgroundColor:['#0073c8','#7b1fa2'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
-
   // Chart: licenças dias restantes
   const ctx6=document.getElementById('chart-lic');
   if(ctx6) new Chart(ctx6,{type:'bar',data:{labels:STATE.licencas.map(l=>l.nome.split(' ').slice(0,2).join(' ')),datasets:[{label:'Dias restantes',data:STATE.licencas.map(l=>Math.min(diasParaVencer(l.vencimento),730)),backgroundColor:STATE.licencas.map(l=>diasParaVencer(l.vencimento)<=30?'#e74c3c':diasParaVencer(l.vencimento)<=90?'#e67e22':'#27ae60'),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
-
   // Chart: equipamentos por status
   const eq_st={Disponível:STATE.equipamentos.filter(e=>e.status==='disponivel').length,Reservado:STATE.equipamentos.filter(e=>e.status==='reservado').length,Manutenção:STATE.equipamentos.filter(e=>e.status==='manutencao').length,Inativo:STATE.equipamentos.filter(e=>e.status==='inativo').length};
   const ctx_eq=document.getElementById('chart-equip-status');
   if(ctx_eq) new Chart(ctx_eq,{type:'doughnut',data:{labels:Object.keys(eq_st),datasets:[{data:Object.values(eq_st),backgroundColor:['#27ae60','#0073c8','#e67e22','#95a5a6'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
-
   // Chart: reservas por mês
   const ctx_rm=document.getElementById('chart-res-mensal');
   if(ctx_rm) new Chart(ctx_rm,{type:'bar',data:{labels:meses,datasets:[{label:'Reservas',data:meses.map(()=>Math.floor(Math.random()*6)+1),backgroundColor:'rgba(0,115,200,.7)',borderRadius:6},{label:'Chamados',data:meses.map(()=>Math.floor(Math.random()*5)+1),backgroundColor:'rgba(231,76,60,.7)',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
 }
-
-
 // ===== MODALS: RESERVA =====
 function openModalReserva(reservaId=null, preData=null, unidadeFixa=null) {
   const r=reservaId?STATE.reservas.find(r=>r.id===reservaId):null;
@@ -2401,7 +2255,6 @@ function openModalReserva(reservaId=null, preData=null, unidadeFixa=null) {
         <label class="required">Data da Reserva</label>
         <input type="date" id="res-data" value="${r?.dataInicio||preData||dateNow()}" style="max-width:200px"/>
       </div>
-
       <!-- SELETOR DE AULAS -->
       <div class="form-group">
         <label>Período / Aulas</label>
@@ -2419,7 +2272,6 @@ function openModalReserva(reservaId=null, preData=null, unidadeFixa=null) {
           </label>`).join('')}
         </div>
       </div>
-
       <!-- BOTÃO HORÁRIO MANUAL — integrado na grade de aulas -->
       <div class="form-group" style="margin-top:-4px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -2471,7 +2323,6 @@ function openModalReserva(reservaId=null, preData=null, unidadeFixa=null) {
   </div>`);
   if(r) setTimeout(()=>updateEquipList(r.equipamento),60);
 }
-
 function updateEquipList(selectedEquip='') {
   const tipo=$('#res-tipo')?.value, sel=$('#res-equip'), og=$('#res-outro-equip-group');
   if(!sel) return;
@@ -2485,27 +2336,23 @@ function updateEquipList(selectedEquip='') {
   sel.innerHTML=`<option value="">Selecione...</option>${extraOption}${list.map(e=>`<option value="${e.id}" ${e.nome===selectedEquip?'selected':''}>${e.nome} (${e.status})</option>`).join('')}<option value="outro">Outro (especificar)</option>`;
 }
 function checkOutroEquip(){ const sel=$('#res-equip'), og=$('#res-outro-equip-group'); if(og) og.style.display=sel?.value==='outro'?'':'none'; }
-
 function toggleTodasAulas(cb) {
   const cbs = $$('.aula-cb');
   cbs.forEach(c => { c.checked = cb.checked; });
   atualizarEstiloAulas();
 }
-
 function sincronizarAulas() {
   const cbs = $$('.aula-cb');
   const todas = document.getElementById('aula-todas');
   if (todas) todas.checked = cbs.every(c => c.checked);
   atualizarEstiloAulas();
 }
-
 function atualizarEstiloAulas() {
   $$('.aula-check').forEach(lbl => {
     const cb = lbl.querySelector('input[type="checkbox"]');
     if (cb) lbl.classList.toggle('checked', cb.checked);
   });
 }
-
 function toggleHorarioManual() {
   const wrap = document.getElementById('horario-manual-wrap');
   const btn  = document.getElementById('btn-horario-manual');
@@ -2527,27 +2374,23 @@ function toggleHorarioManual() {
     atualizarPreviewHorario();
   }
 }
-
 function atualizarPreviewHorario() {
   const hi = document.getElementById('res-hinicio')?.value;
   const hf = document.getElementById('res-hfim')?.value;
   const prev = document.getElementById('horario-manual-preview');
   if (prev) prev.textContent = hi && hf ? `${hi} – ${hf}` : '';
 }
-
 function getAulasSelecionadas() {
   const selecionadas = [];
   $$('.aula-cb').forEach(cb => { if (cb.checked) selecionadas.push(cb.value); });
   return selecionadas;
 }
-
 function getHorarioDasAulas(aulas) {
   if (!aulas || !aulas.length) return { inicio: '', fim: '' };
   const ordered = AULAS.filter(a => aulas.includes(a.id));
   if (!ordered.length) return { inicio: '', fim: '' };
   return { inicio: ordered[0].inicio, fim: ordered[ordered.length - 1].fim };
 }
-
 function getLabelAulas(aulas) {
   if (!aulas || !aulas.length) return '';
   if (aulas.length === AULAS.length) return 'Todas as Aulas';
@@ -2556,7 +2399,6 @@ function getLabelAulas(aulas) {
 function toggleOutroSala(sel){ const g=$('#res-outro-sala-group'); if(g) g.style.display=sel.value==='Outro'?'':'none'; }
 function changeQty(d){ const i=$('#res-qtd'); if(i) i.value=Math.max(1,Math.min(99,parseInt(i.value)+d)); }
 function editReserva(id){ openModalReserva(id); }
-
 async function salvarReserva(id) {
   const reservaAtual = id ? STATE.reservas.find(r=>r.id===id) : null;
   const tipo=$('#res-tipo')?.value || (reservaAtual?.equipamentoTipo||'');
@@ -2592,14 +2434,21 @@ async function salvarReserva(id) {
     const datas = gerarDatasRecorrentes(data, recorrencia);
     for (const dt of datas) {
       const nr={id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:dt,horaInicio:hinicio,horaFim:hfim,aulas:aulasSel,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow(),recorrencia:recorrencia||null};
-      STATE.reservas.push(nr); const fbResult = await fbSave('reservas',nr.id,nr); if(fbResult === true){ /* sucesso na nuvem */ } else if(fbResult === false){ toast('Reserva criada localmente.','info'); }
+      STATE.reservas.push(nr);
+      try {
+        const fbResult = await fbSave('reservas',nr.id,nr);
+        if(fbResult === true){ /* sucesso na nuvem */ }
+        else if(fbResult === false){ toast('Reserva criada localmente.','info'); }
+      } catch(e) {
+        // Firebase falhou, mas dado ja foi salvo em STATE/localStorage
+        toast('Reserva salva localmente.','info');
+      }
     }
 }
     addNotification('Nova reserva criada', nome + ' reservou ' + equipNome + (datas.length>1? ' ('+datas.length+'x)':''), 'ti-calendar-plus');
     toast(datas.length > 1 ? ' ' + datas.length + ' reservas criadas!' : ' Reserva criada!');
   }
   closeModal(); saveState(); renderPage(STATE.currentPage);
-
 // ===== MODALS: CHAMADO =====
 function openModalChamado(chamadoId=null, unidadeFixa=null) {
   const c=chamadoId?STATE.chamados.find(c=>c.id===chamadoId):null;
@@ -2661,7 +2510,6 @@ function openModalChamado(chamadoId=null, unidadeFixa=null) {
   </div>`);
 }
 function editChamado(id){ openModalChamado(id); }
-
 async function salvarChamado(id) {
   const chamadoAtual = id ? STATE.chamados.find(c=>c.id===id) : null;
   const titulo=($('#ch-titulo')?.value||'').trim() || (chamadoAtual?.titulo||'');
@@ -2675,10 +2523,9 @@ async function salvarChamado(id) {
   const horaCh=$('#ch-hora')?.value || (chamadoAtual?.hora||'');
   if(!titulo||!cat||!prio||!sol||!desc){ toast('Preencha todos os campos obrigatórios.','error'); return; }
   if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c){ Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,criado:dataCh,hora:horaCh,atualizado:dateNow()}); const fbResult = await fbSave('chamados',c.id,c); if(fbResult === true){ toast('Chamado atualizado!'); } else if(fbResult === false){ toast('Chamado atualizado localmente.','info'); } } }
-  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,status:'aberto',criado:dataCh,hora:horaCh,atualizado:dateNow()}; STATE.chamados.push(nc); const fbResult = await fbSave('chamados',nc.id,nc); if(fbResult === true){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); } else if(fbResult === false){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado criado localmente.','info'); } }
+  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,status:'aberto',criado:dataCh,hora:horaCh,atualizado:dateNow()}; STATE.chamados.push(nc); try { const fbResult = await fbSave('chamados',nc.id,nc); if(fbResult === true){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); } else if(fbResult === false){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado criado localmente.','info'); } } catch(e) { // Firebase falhou, mas dado ja foi salvo em STATE/localStorage toast('Chamado criado localmente (erro na nuvem).','info'); }  }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
-
 // ===== MODALS: INVENTÁRIO =====
 function openModalInventario(invId=null) {
   const i=invId?STATE.inventario.find(i=>i.id===invId):null;
@@ -2728,7 +2575,6 @@ function salvarInventario(id) {
   closeModal(); saveState(); renderPage('inventario');
 }
 function deleteInventario(id){ if(!confirm('Excluir este item?')) return; fbDelete('inventario',id); STATE.inventario=STATE.inventario.filter(i=>i.id!==id); saveState(); renderPage('inventario'); toast('Item excluído.','info'); }
-
 // ===== MODALS: LICENÇA =====
 function openModalLicenca(licId=null) {
   const l=licId?STATE.licencas.find(l=>l.id===licId):null;
@@ -2773,7 +2619,6 @@ function salvarLicenca(id) {
   closeModal(); saveState(); renderPage('licencas');
 }
 function deleteLicenca(id){ if(!confirm('Excluir esta licença?')) return; fbDelete('licencas',id); STATE.licencas=STATE.licencas.filter(l=>l.id!==id); saveState(); renderPage('licencas'); toast('Licença excluída.','info'); }
-
 // ===== MODALS: EQUIPAMENTO =====
 function openModalEquipamento(unidadeFixa=null, equipId=null) {
   const e=equipId?STATE.equipamentos.find(e=>e.id===equipId):null;
@@ -2823,7 +2668,6 @@ function openModalEquipamento(unidadeFixa=null, equipId=null) {
 }
 function editEquipamento(id){ openModalEquipamento(null, id); }
 function changeQtyEq(d){ const i=$('#eq-qtd'); if(i) i.value=Math.max(1,Math.min(999,parseInt(i.value)+d)); }
-
 function salvarEquipamento(id) {
   const nome=$('#eq-nome')?.value.trim(), tipo=$('#eq-tipo')?.value, pat=$('#eq-pat')?.value.trim();
   if(!nome||!tipo||!pat){ toast('Preencha nome, tipo e patrimônio.','error'); return; }
@@ -2852,7 +2696,6 @@ function salvarEquipamento(id) {
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
 function deleteEquipamento(id){ if(!confirm('Excluir este equipamento?')) return; fbDelete('equipamentos',id); STATE.equipamentos=STATE.equipamentos.filter(e=>e.id!==id); saveState(); renderPage(STATE.currentPage); toast('Excluído.','info'); }
-
 // ===== MODALS: USUÁRIO =====
 function openModalUsuario(userId=null) {
   const u=userId?STATE.users.find(u=>u.id===userId):null;
@@ -2895,13 +2738,11 @@ async function salvarUsuario(id) {
 }
 function deleteUsuario(id){ if(id===STATE.currentUser.id){ toast('Não pode excluir seu próprio usuário.','error'); return; } if(!confirm('Excluir usuário?')) return; fbDelete('users',id); STATE.users=STATE.users.filter(u=>u.id!==id); saveState(); renderPage('usuarios'); toast('Usuário excluído.','info'); }
 async function toggleUserStatus(id){ const u=STATE.users.find(u=>u.id===id); if(!u) return; u.status=u.status==='ativo'?'suspenso':'ativo'; const fbResult = await fbSave('users',u.id,u); if(fbResult === true){ toast(`Usuário ${u.status}.`,'info'); } else if(fbResult === false){ toast('Status do usuário atualizado localmente.','info'); } renderPage('usuarios'); }
-
 // ===== STATUS CHANGERS =====
 async function changeReservaStatus(id, status){ const r=STATE.reservas.find(r=>r.id===id); if(r){ r.status=status; const fbResult = await fbSave('reservas',r.id,r); if(fbResult === true){ toast(`Reserva ${status}!`); } else if(fbResult === false){ toast('Reserva atualizada localmente.','info'); } } saveState(); }
 async function changeChamadoStatus(id, status){ const c=STATE.chamados.find(c=>c.id===id); if(c){ c.status=status; c.atualizado=dateNow(); const fbResult = await fbSave('chamados',c.id,c); if(fbResult === true){ toast(`Chamado ${status}!`); } else if(fbResult === false){ toast('Chamado atualizado localmente.','info'); } } }
 function deleteReserva(id){ if(!confirm('Excluir reserva?')) return; fbDelete('reservas',id); STATE.reservas=STATE.reservas.filter(r=>r.id!==id); saveState(); renderPage(STATE.currentPage); toast('Reserva excluída.','info'); }
 function deleteChamado(id){ if(!confirm('Excluir chamado?')) return; fbDelete('chamados',id); STATE.chamados=STATE.chamados.filter(c=>c.id!==id); saveState(); renderPage(STATE.currentPage); toast('Chamado excluído.','info'); }
-
 // ===== ACTIONS DROPDOWN =====
 function toggleMenu(btn) {
   $$('.actions-dropdown').forEach(d=>{ if(d!==btn.nextElementSibling){ d.style.display='none'; d.removeAttribute('data-open'); } });
@@ -2926,7 +2767,6 @@ function toggleMenu(btn) {
   m.style.minWidth=mW+'px';
   setTimeout(()=>document.addEventListener('click',()=>{ m.style.display='none'; },{ once:true }),10);
 }
-
 // ===== NAV GROUP TOGGLE =====
 function toggleNavGroup(id) {
   const el = document.getElementById(id);
@@ -2939,7 +2779,6 @@ function toggleNavGroup(id) {
     if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
   }
 }
-
 // ===== PAGINA UNIDADE (filtrada por unidade) =====
 function paginaUnidade(tipo, unidade) {
   const uni = unidade;
@@ -3021,7 +2860,6 @@ function paginaUnidade(tipo, unidade) {
   }
   return '<p>Seção em desenvolvimento.</p>';
 }
-
 function renderUnidadeEquipsQtd(list) {
   if(!list.length) return '<tr><td colspan="7"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>';
   return list.map(e=>`<tr>
@@ -3036,7 +2874,6 @@ function renderUnidadeEquipsQtd(list) {
     </div></td>
   </tr>`).join('');
 }
-
 function attachUnidadeEquipFilter(unidade) {
   const s=$('#search-uni-eq');
   if(s) s.addEventListener('input',()=>{
@@ -3045,7 +2882,6 @@ function attachUnidadeEquipFilter(unidade) {
     const tb=$('#uni-eq-tbody'); if(tb) tb.innerHTML=renderUnidadeEquipsQtd(f);
   });
 }
-
 function renderUnidadeCharts(unidade) {
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const ctx1=document.getElementById('chart-uni-mensal');
@@ -3054,17 +2890,14 @@ function renderUnidadeCharts(unidade) {
   const ch=STATE.chamados.filter(c=>c.unidade===unidade);
   if(ctx2) new Chart(ctx2,{type:'doughnut',data:{labels:['Alta','Média','Baixa'],datasets:[{data:[ch.filter(c=>c.prioridade==='Alta').length,ch.filter(c=>c.prioridade==='Media').length,ch.filter(c=>c.prioridade==='Baixa').length],backgroundColor:['#e74c3c','#e67e22','#27ae60'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
 }
-
 function openModalReservaUnidade(unidade) { openModalReserva(null, null, unidade); }
 function openModalChamadoUnidade(unidade) { openModalChamado(null, unidade); }
-
 // ===== ACOMPANHAMENTOS DE CHAMADO =====
 function openModalAcompanhamento(chamadoId) {
   const c = STATE.chamados.find(c => c.id === chamadoId);
   if (!c) return;
   const lista = STATE.acompanhamentos.filter(a => a.chamadoId === chamadoId).sort((a,b)=>b.id-a.id);
   const isAdmin = STATE.currentUser.role === 'admin';
-
   openModal(`
   <div class="modal modal-lg" style="max-width:680px">
     <div class="modal-header" style="background:var(--gray-800)">
@@ -3074,7 +2907,6 @@ function openModalAcompanhamento(chamadoId) {
       </span>
       <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
     </div>
-
     <!-- DETALHES DO CHAMADO -->
     <div style="padding:16px 24px;background:var(--gray-50);border-bottom:1px solid var(--gray-200)">
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:12px">
@@ -3095,7 +2927,6 @@ function openModalAcompanhamento(chamadoId) {
         <strong style="font-size:11px;color:var(--gray-400);text-transform:uppercase">Descrição:</strong><br>${c.descricao}
       </div>
     </div>
-
     <!-- TIMELINE DE ACOMPANHAMENTOS -->
     <div class="modal-body" style="padding:20px 24px;max-height:320px;overflow-y:auto" id="acomp-lista">
       ${lista.length === 0
@@ -3116,7 +2947,6 @@ function openModalAcompanhamento(chamadoId) {
             </div>
           </div>`).join('')}
     </div>
-
     <!-- FORMULÁRIO DE NOVO ACOMPANHAMENTO -->
     <div style="padding:16px 24px;border-top:2px solid var(--gray-200);background:white">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
@@ -3157,13 +2987,11 @@ function openModalAcompanhamento(chamadoId) {
     </div>
   </div>`);
 }
-
 function salvarAcompanhamento(chamadoId) {
   const texto = $('#acomp-texto')?.value.trim();
   const tipo  = $('#acomp-tipo')?.value || 'observacao';
   const novoStatus = $('#acomp-status')?.value || '';
   if (!texto) { toast('Digite a mensagem do acompanhamento.', 'error'); return; }
-
   const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const novoAcomp = {
     id: STATE.nextId.acompanhamento++,
@@ -3176,13 +3004,11 @@ function salvarAcompanhamento(chamadoId) {
   };
   STATE.acompanhamentos.push(novoAcomp);
   fbSave('acompanhamentos', novoAcomp.id, novoAcomp);
-
   // Alterar status se solicitado
   if (novoStatus) {
     const c = STATE.chamados.find(c => c.id === chamadoId);
     if (c) { c.status = novoStatus; c.atualizado = dateNow(); fbSave('chamados',c.id,c); }
   }
-
   saveState();
   addNotification(`Acompanhamento #${chamadoId}`, `${STATE.currentUser.nome}: ${texto.slice(0,40)}...`, 'ti-message-circle');
   toast('Acompanhamento registrado!');
@@ -3190,10 +3016,6 @@ function salvarAcompanhamento(chamadoId) {
   closeModal();
   renderPage(STATE.currentPage);
 }
-
-
-
-
 function gerarDatasRecorrentes(dataBase, tipo) {
   const datas = [dataBase];
   if (!tipo) return datas;
@@ -3212,7 +3034,6 @@ function gerarDatasRecorrentes(dataBase, tipo) {
   }
   return datas;
 }
-
 // ===== EXPORTAR DADOS =====
 function exportarCSV(dados, nomeArquivo) {
   if (!dados || !dados.length) { toast('Nenhum dado para exportar.', 'warning'); return; }
@@ -3230,7 +3051,6 @@ function exportarCSV(dados, nomeArquivo) {
   URL.revokeObjectURL(url);
   toast('Arquivo CSV exportado! Abra no Excel.', 'success');
 }
-
 function toggleExportMenu() {
   const m = document.getElementById('export-menu');
   if (!m) return;
@@ -3241,7 +3061,6 @@ function toggleExportMenu() {
     }), 10);
   }
 }
-
 function exportarGeral() {
   const chamados = STATE.chamados.map(c=>({tipo:'Chamado', id:c.id, titulo:c.titulo, categoria:c.categoria, prioridade:c.prioridade, solicitante:c.solicitante, unidade:c.unidade||'Matriz', status:c.status, data:c.criado}));
   const reservas = sortByDate(STATE.reservas).map(r=>({tipo:'Reserva', id:r.id, titulo:r.equipamento, categoria:r.equipamentoTipo, prioridade:'—', solicitante:r.solicitante, unidade:r.unidade||'Matriz', status:r.status, data:r.dataInicio}));
@@ -3252,12 +3071,10 @@ function exportarChamados() { exportarCSV(STATE.chamados, 'chamados-miro'); }
 function exportarInventario() { exportarCSV(STATE.inventario, 'inventario-miro'); }
 function exportarLicencas() { exportarCSV(STATE.licencas, 'licencas-miro'); }
 function exportarEquipamentos() { exportarCSV(STATE.equipamentos, 'equipamentos-miro'); }
-
 function exportarUsuariosCSV() {
   const dados = STATE.users.map(u => ({ Nome: u.nome, 'Nome de usuário': u.usuario, 'E-mail': u.email, Perfil: u.role, Unidade: u.unidade||'', Status: u.status }));
   exportarCSV(dados, 'usuarios-miro');
 }
-
 // ===== IMPORTAÇÃO GENÉRICA CSV =====
 const IMPORT_CONFIG = {
   usuarios: {
@@ -3314,10 +3131,8 @@ const IMPORT_CONFIG = {
     toastMsg: (n, d) => `Importação de inventário concluída! ${n} criados, ${d} duplicados ignorados.`,
   }
 };
-
 let _importData = null;
 let _importTipo = null;
-
 function baixarTemplateCSV(tipo) {
   const cfg = IMPORT_CONFIG[tipo];
   if (!cfg) return;
@@ -3329,7 +3144,6 @@ function baixarTemplateCSV(tipo) {
   URL.revokeObjectURL(url);
   toast('Template baixado! Preencha no Excel e importe.', 'info');
 }
-
 function openModalImportacao(tipo) {
   _importTipo = tipo;
   _importData = null;
@@ -3358,7 +3172,6 @@ function openModalImportacao(tipo) {
     </div>
   </div>`);
 }
-
 function lerCSVImportacao(file) {
   if (!file) return;
   const cfg = IMPORT_CONFIG[_importTipo];
@@ -3380,7 +3193,6 @@ function lerCSVImportacao(file) {
     const novos = rows.filter(r => !cfg.duplicateCheck(r, existing));
     const dups = rows.length - novos.length;
     _importData = { rows, novos, dups, headers };
-
     let preview = `<div style="padding:12px;background:var(--gray-50);border-radius:8px;font-size:13px">`;
     preview += `<div style="display:flex;gap:16px;margin-bottom:12px">`;
     preview += `<span><strong>${rows.length}</strong> linhas no CSV</span>`;
@@ -3408,16 +3220,13 @@ function lerCSVImportacao(file) {
   };
   reader.readAsText(file, 'UTF-8');
 }
-
 async function executarImportacao() {
   if (!_importData || !_importTipo) return;
   const cfg = IMPORT_CONFIG[_importTipo];
   const { novos } = _importData;
   if (novos.length === 0) { toast('Nenhum novo registro para importar.', 'warning'); return; }
-
   let hash = null;
   if (_importTipo === 'usuarios') hash = await hashSenha('miro26');
-
   let criados = 0;
   for (const row of novos) {
     const id = STATE.nextId[cfg.nextIdKey]++;
@@ -3431,8 +3240,6 @@ async function executarImportacao() {
   renderPage(STATE.currentPage);
   toast(cfg.toastMsg(criados, _importData.dups), 'success');
 }
-
-
 function configuracoes() {
   return `
   <div class="grid-2">
@@ -3455,7 +3262,6 @@ function configuracoes() {
         <button class="btn btn-primary" onclick="salvarSLA()"><i class="ti ti-check"></i> Salvar SLA</button>
       </div>
     </div>
-
     <div class="card">
       <div class="card-header"><span class="card-title"><i class="ti ti-database-export"></i> Exportar Dados</span></div>
       <div class="card-body">
@@ -3469,7 +3275,6 @@ function configuracoes() {
         </div>
       </div>
     </div>
-
     <div class="card">
       <div class="card-header"><span class="card-title"><i class="ti ti-user-plus"></i> Importar</span></div>
       <div class="card-body">
@@ -3485,7 +3290,6 @@ function configuracoes() {
         </div>
       </div>
     </div>
-
     <div class="card">
       <div class="card-header"><span class="card-title"><i class="ti ti-shield-lock"></i> Segurança</span></div>
       <div class="card-body">
@@ -3505,7 +3309,6 @@ function configuracoes() {
         <button class="btn btn-primary" onclick="alterarSenha()"><i class="ti ti-lock"></i> Alterar Senha</button>
       </div>
     </div>
-
     <div class="card">
       <div class="card-header"><span class="card-title"><i class="ti ti-cloud-upload"></i> Backup & Restauração</span></div>
       <div class="card-body">
@@ -3526,7 +3329,6 @@ function configuracoes() {
         </div>
       </div>
     </div>
-
     <div class="card">
       <div class="card-header"><span class="card-title"><i class="ti ti-info-circle"></i> Sobre o Sistema</span></div>
       <div class="card-body">
@@ -3544,7 +3346,6 @@ function configuracoes() {
     </div>
   </div>`;
 }
-
 function salvarSLA() {
   const alta  = parseInt($('#sla-alta')?.value) || 2;
   const media = parseInt($('#sla-media')?.value) || 8;
@@ -3554,7 +3355,6 @@ function salvarSLA() {
   fbSave('config', 'sla', { sla: STATE.sla });
   toast('SLA atualizado!');
 }
-
 async function alterarSenha() {
   const atual = $('#senha-atual')?.value;
   const nova  = $('#senha-nova')?.value;
@@ -3578,7 +3378,6 @@ async function alterarSenha() {
   $('#senha-nova').value = '';
   $('#senha-conf').value = '';
 }
-
 // ===== QR CODE =====
 function abrirQRCode(patrimonio, nome) {
   const texto = encodeURIComponent(patrimonio);
@@ -3602,7 +3401,6 @@ function abrirQRCode(patrimonio, nome) {
     </div>
   </div>`);
 }
-
 function imprimirQR() {
   const modal = document.querySelector('.modal-body');
   if (!modal) { toast('Nada para imprimir.','warning'); return; }
@@ -3624,7 +3422,6 @@ function imprimirQR() {
   janela.document.write(html); janela.document.close();
   janela.onload=()=>{ setTimeout(()=>{ janela.focus(); janela.print(); },500); };
 }
-
 // ===== SLA — TEMPO DE RESPOSTA =====
 function calcularSLA(chamado) {
   if (chamado.status === 'fechado' || chamado.status === 'cancelado') return null;
@@ -3640,7 +3437,6 @@ function calcularSLA(chamado) {
   if (diffH < 6)  return { vencido: false, label: `${diffH}h restantes`, cor: 'var(--warning)' };
   return { vencido: false, label: `${diffH}h restantes`, cor: 'var(--success)' };
 }
-
 function renderSLABadge(chamado) {
   const sla = calcularSLA(chamado);
   if (!sla) return '';
@@ -3648,20 +3444,16 @@ function renderSLABadge(chamado) {
     <i class="ti ti-clock" style="font-size:11px"></i>${sla.label}
   </span>`;
 }
-
-
 // ===== COMPRAS =====
 const STATUS_COMPRA = ['Solicitado','Em cotação','Aprovado','Pedido realizado','Recebido','Entregue','Cancelado'];
 const PAGAMENTOS_COMPRA = ['Boleto','Cartão','DDA','Dinheiro','Pix'];
 const SETORES_COMPRA = ['Administrativo', 'Biblioteca', 'Coordenação', 'Direção', 'Laboratório', 'Sala de Aula', 'Secretaria', 'TI', 'Outro'];
 const CATS_COMPRA = ['Cabo/Acessório','Cabos','Caixa de Som','Câmera','iPad','Impressora','Material de Consumo','Microfone','Monitor','Mouse','Notebook','Peça de Reposição','Projetor','Roteador','Serviço Técnico','Software/Licença','Switch','Tablet','Teclado','Outro'];
-
 function comprasPage() {
   const list = [...STATE.compras].sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
   const totalGasto = STATE.compras.reduce((a,c)=>a+(c.valorTotal||0),0);
   const pendentes  = STATE.compras.filter(c=>!['Recebido','Entregue','Cancelado'].includes(c.status)).length;
   const recebidos  = STATE.compras.filter(c=>c.status==='Recebido').length;
-
   return `
   <div class="stats-grid stats-compras" style="margin-bottom:20px">
     <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-shopping-cart"></i></div><div class="stat-info"><div class="stat-number">${STATE.compras.length}</div><div class="stat-label">Total de Compras</div></div></div>
@@ -3669,7 +3461,6 @@ function comprasPage() {
     <div class="stat-card"><div class="stat-icon green"><i class="ti ti-circle-check"></i></div><div class="stat-info"><div class="stat-number">${recebidos}</div><div class="stat-label">Recebidos</div></div></div>
     <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-coin"></i></div><div class="stat-info"><div class="stat-number">R$ ${totalGasto.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="stat-label">Investimento Total</div></div></div>
   </div>
-
   <div class="filter-bar no-print">
     <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar compra..." id="search-compra" oninput="filtrarCompras()"/></div>
     <select class="filter-select" id="filter-compra-status" onchange="filtrarCompras()">
@@ -3689,7 +3480,6 @@ function comprasPage() {
     <button class="btn btn-ghost" onclick="exportarCompras()"><i class="ti ti-download"></i> Exportar</button>
     <button class="btn btn-ghost" onclick="imprimirCompras()"><i class="ti ti-printer"></i> Imprimir</button>
   </div>
-
   <div class="card">
     <div class="card-header">
       <span class="card-title"><i class="ti ti-shopping-cart"></i> Registro de Compras TI (${list.length})</span>
@@ -3719,7 +3509,6 @@ function comprasPage() {
     </div>
   </div>`;
 }
-
 function renderComprasCards(list) {
   if (!list.length) return `<div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div>`;
   const statusColors = { 'Solicitado':'badge-pendente', 'Em cotação':'badge-andamento', 'Aprovado':'badge-reservado', 'Pedido realizado':'badge-aberto', 'Recebido':'badge-fechado', 'Entregue':'badge-ativo', 'Cancelado':'badge-cancelado' };
@@ -3743,7 +3532,6 @@ function renderComprasCards(list) {
     </div>
   </div>`).join('');
 }
-
 function renderComprasRows(list) {
   if (!list.length) return `<tr><td colspan="15"><div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div></td></tr>`;
   const statusColors = { 'Solicitado':'badge-pendente', 'Em cotação':'badge-andamento', 'Aprovado':'badge-reservado', 'Pedido realizado':'badge-aberto', 'Recebido':'badge-fechado', 'Entregue':'badge-ativo', 'Cancelado':'badge-cancelado' };
@@ -3776,7 +3564,6 @@ function renderComprasRows(list) {
     </td>
   </tr>`).join('');
 }
-
 function filtrarCompras() {
   const q    = ($('#search-compra')?.value||'').toLowerCase();
   const st   = $('#filter-compra-status')?.value||'';
@@ -3789,7 +3576,6 @@ function filtrarCompras() {
   const tb=$('#compras-tbody'); if(tb) tb.innerHTML=renderComprasRows(list);
   const cd=$('#compras-cards'); if(cd) cd.innerHTML=renderComprasCards(list);
 }
-
 function limparFiltrosCompras() {
   const s=$('#search-compra'); if(s) s.value='';
   const st=$('#filter-compra-status'); if(st) st.value='';
@@ -3798,7 +3584,6 @@ function limparFiltrosCompras() {
   const ate=$('#filter-compra-ate'); if(ate) ate.value='';
   filtrarCompras();
 }
-
 function openModalCompra(compraId=null) {
   const c = compraId ? STATE.compras.find(c=>String(c.id)===String(compraId)) : null;
   openModal(`
@@ -3811,7 +3596,6 @@ function openModalCompra(compraId=null) {
       <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
     </div>
     <div class="modal-body">
-
       <!-- ITEM -->
       <div style="background:var(--primary-light);border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--primary)">
         <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-box"></i> Dados do Produto / Serviço</div>
@@ -3868,7 +3652,6 @@ function openModalCompra(compraId=null) {
         </div>
         <input type="hidden" id="cp-vlrtotal" value="${c?.valorTotal||''}"/>
       </div>
-
       <!-- FORNECEDOR -->
       <div style="background:#f0fdf4;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--success)">
         <div style="font-size:11px;font-weight:700;color:var(--success);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-building-store"></i> Fornecedor</div>
@@ -3890,7 +3673,6 @@ function openModalCompra(compraId=null) {
           </div>
         </div>
       </div>
-
       <!-- PAGAMENTO -->
       <div style="background:#eff6ff;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--accent)">
         <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-credit-card"></i> Pagamento</div>
@@ -3908,7 +3690,6 @@ function openModalCompra(compraId=null) {
           </div>
         </div>
       </div>
-
       <!-- PEDIDO -->
       <div style="background:#fff7ed;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--warning)">
         <div style="font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-file-invoice"></i> Dados do Pedido</div>
@@ -3939,7 +3720,6 @@ function openModalCompra(compraId=null) {
           <input type="text" id="cp-link" placeholder="https://..." value="${c?.link||''}"/>
         </div>
       </div>
-
       <!-- SOLICITANTE / DESTINO -->
       <div style="background:#fdf4ff;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid #7b1fa2">
         <div style="font-size:11px;font-weight:700;color:#7b1fa2;text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-user-check"></i> Solicitante & Destino</div>
@@ -3973,7 +3753,6 @@ function openModalCompra(compraId=null) {
           </div>
         </div>
       </div>
-
       <!-- OBSERVAÇÕES + INVENTÁRIO -->
       <div class="form-row">
         <div class="form-group">
@@ -3994,7 +3773,6 @@ function openModalCompra(compraId=null) {
           </div>
         </div>
       </div>
-
     </div>
     <div class="modal-footer" style="background:var(--gray-50)">
       <button class="btn btn-ghost" onclick="closeModal()"><i class="ti ti-x"></i> Cancelar</button>
@@ -4006,7 +3784,6 @@ function openModalCompra(compraId=null) {
   const semDesconto = !!(c&&!(c.descontoPercent||c.descontoValor||c.descontoReais||c.frete));
   setTimeout(()=>inicializarTotaisCompra(semDesconto,(c&&c.valorTotal)||0), 50);
 }
-
 function inicializarTotaisCompra(preservar, valorSalvo) {
   if(!preservar) { calcTotalCompra(); return; }
   // Compra antiga sem desconto: exibe subtotal calculado mas mantém o total salvo
@@ -4018,7 +3795,6 @@ function inicializarTotaisCompra(preservar, valorSalvo) {
   const elFr=$('#cp-freteval'); if(elFr) elFr.textContent=fmt(0);
   const elF=$('#cp-final'); if(elF) elF.textContent=fmt(valorSalvo);
 }
-
 function changeQtyCp(d) {
   const i=$('#cp-qtd'); if(i) { i.value=Math.max(1,parseInt(i.value||1)+d); calcTotalCompra(); }
 }
@@ -4053,7 +3829,6 @@ function calcTotalCompra() {
   const elF=$('#cp-final'); if(elF) elF.textContent=fmt(t.final);
   const total=$('#cp-vlrtotal'); if(total) total.value=t.final.toFixed(2);
 }
-
 function preencherFornecedorCompra() {
   const id=$('#cp-fornecedor-id')?.value||'';
   if(!id) return;
@@ -4062,7 +3837,6 @@ function preencherFornecedorCompra() {
   const n=$('#cp-fornecedor'); if(n && !n.value.trim()) n.value=f.nome||'';
   const ct=$('#cp-contato'); if(ct && !ct.value.trim()) ct.value=f.contato||f.telefone||f.email||'';
 }
-
 async function salvarCompra(id) {
   const item=$('#cp-item')?.value.trim();
   const fornecedor=$('#cp-fornecedor')?.value.trim();
@@ -4099,7 +3873,6 @@ async function salvarCompra(id) {
   const addInv=$('#cp-inventario')?.checked;
   const status=$('#cp-status')?.value||'Solicitado';
   const garantiaMeses=parseInt($('#cp-garantia')?.value)||0;
-
   const dados={
     item, categoria:$('#cp-categoria')?.value||'',
     descricao:$('#cp-descricao')?.value||'',
@@ -4118,7 +3891,6 @@ async function salvarCompra(id) {
     garantiaMeses, adicionarInventario:addInv,
     criado:dateNow()
   };
-
   if(id) {
     const c=STATE.compras.find(c=>String(c.id)===String(id));
     if(c) { Object.assign(c,dados); const fbResult = await fbSave('compras',c.id,c); if(fbResult === true){ toast('Compra atualizada!'); } else if(fbResult === false){ toast('Compra atualizada localmente.','info'); } }
@@ -4134,7 +3906,6 @@ async function salvarCompra(id) {
   }
   closeModal(); saveState(); renderPage('compras');
 }
-
 function adicionarCompraInventario(c) {
   const pat=`CP-${c.id}`;
   if(STATE.inventario.find(i=>i.patrimonio===pat)){ toast('Este item já foi adicionado ao inventário.','warning'); return; }
@@ -4153,16 +3924,13 @@ function adicionarCompraInventario(c) {
   saveState();
   toast(`${c.item} adicionado ao inventário!`,'success');
 }
-
 function editCompra(id) { openModalCompra(id); }
-
 function deleteCompra(id) {
   if(!confirm('Excluir esta compra?')) return;
   fbDelete('compras',id);
   STATE.compras=STATE.compras.filter(c=>String(c.id)!==String(id));
   saveState(); renderPage('compras'); toast('Compra excluída.','info');
 }
-
 function verCompra(id) {
   const c=STATE.compras.find(c=>String(c.id)===String(id)); if(!c) return;
   openModal(`
@@ -4228,7 +3996,6 @@ function verCompra(id) {
     </div>
   </div>`);
 }
-
 // ===== FORNECEDORES =====
 function openModalFornecedores() {
   const list=[...(STATE.fornecedores||[])].sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
@@ -4260,7 +4027,6 @@ function openModalFornecedores() {
     </div>
   </div>`);
 }
-
 function openModalFornecedor(id=null) {
   const f=id?(STATE.fornecedores||[]).find(f=>String(f.id)===String(id)):null;
   openModal(`
@@ -4284,7 +4050,6 @@ function openModalFornecedor(id=null) {
     </div>
   </div>`);
 }
-
 function salvarFornecedor(id) {
   const nome=$('#forn-nome')?.value.trim();
   if(!nome){ toast('Informe o nome do fornecedor.','error'); return; }
@@ -4302,7 +4067,6 @@ function salvarFornecedor(id) {
   }
   saveState(); openModalFornecedores();
 }
-
 function toggleFornecedor(id) {
   const f=(STATE.fornecedores||[]).find(f=>String(f.id)===String(id));
   if(!f) return;
@@ -4310,11 +4074,9 @@ function toggleFornecedor(id) {
   fbSave('fornecedores',f.id,f); saveState(); openModalFornecedores();
   toast(f.ativo?'Fornecedor ativado.':'Fornecedor inativado.','info');
 }
-
 function exportarCompras() {
   exportarCSV(STATE.compras,'compras-ti-miro');
 }
-
 function imprimirCompras() {
   const tabela = document.querySelector('.table-compact');
   if (!tabela) { toast('Nada para imprimir.','warning'); return; }
@@ -4368,12 +4130,10 @@ function imprimirCompras() {
   janela.document.write(html); janela.document.close();
   janela.onload=()=>{ setTimeout(()=>{ janela.focus(); janela.print(); },600); };
 }
-
 // ===== IMPRESSÃO ROBUSTA =====
 function imprimirRelatorio() {
   const conteudo = document.getElementById('rel-content');
   if (!conteudo) { window.print(); return; }
-
   // Converter canvas para imagens antes de copiar
   const tempDiv = conteudo.cloneNode(true);
   const origCanvas = conteudo.querySelectorAll('canvas');
@@ -4386,14 +4146,12 @@ function imprimirRelatorio() {
       cv.parentNode.replaceChild(img, cv);
     } catch(e) {}
   });
-
   // Capturar CSS do documento atual
   const estilos = Array.from(document.styleSheets).map(sheet => {
     try {
       return Array.from(sheet.cssRules).map(r => r.cssText).join('\n');
     } catch(e) { return ''; }
   }).join('\n');
-
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -4403,7 +4161,6 @@ function imprimirRelatorio() {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { font-family: 'Nunito', sans-serif; font-size: 12px; color: #1e293b; padding: 16px; background: white; }
-
     /* KPI grid */
     .rel-kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 16px; }
     .rel-kpi { border-radius: 8px; padding: 12px 14px; border: 1px solid #e2e8f0; }
@@ -4422,7 +4179,6 @@ function imprimirRelatorio() {
     .rel-kpi.orange .rel-kpi-num { color: #e67e22; }
     .rel-kpi.teal   .rel-kpi-num { color: #009688; }
     .rel-kpi.purple .rel-kpi-num { color: #7b1fa2; }
-
     /* Cards: podem continuar na mesma página após os KPIs; cabeçalho não fica órfão */
     .card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 14px; overflow: hidden; page-break-inside: auto; }
     .card-header { padding: 10px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; page-break-after: avoid; }
@@ -4430,7 +4186,6 @@ function imprimirRelatorio() {
     thead { display: table-header-group; }
     tbody tr { page-break-inside: avoid; }
     .rel-kpi-grid { page-break-inside: avoid; }
-
     /* Cabeçalho institucional */
     .rel-print-header { display: flex !important; align-items: center; gap: 16px; padding: 16px 20px; background: #0073c8 !important; border-radius: 8px; margin-bottom: 16px; color: white; }
     .rel-print-info h1 { font-size: 18px; font-weight: 800; color: white; margin-bottom: 2px; }
@@ -4438,11 +4193,9 @@ function imprimirRelatorio() {
     .rel-print-info p  { font-size: 11px; color: rgba(255,255,255,.7); }
     .rel-print-logo { background: white; border-radius: 8px; padding: 6px 10px; flex-shrink: 0; }
     .rel-print-logo img { height: 45px; object-fit: contain; }
-
     /* Filtros */
     .rel-filter-summary { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; font-size: 11px; color: #475569; }
     .rel-filter-tag { background: #e8f3fd; color: #0073c8; border: 1px solid #b3d7f5; padding: 2px 8px; border-radius: 12px; font-weight: 600; font-size: 10px; }
-
     /* Tabelas */
     .rel-table-wrap, .table-wrapper { overflow: visible; width: 100%; }
     table, .rel-table { width: 100%; border-collapse: collapse; font-size: 10px; }
@@ -4450,7 +4203,6 @@ function imprimirRelatorio() {
     tbody td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
     .rel-row-alt { background: #f8fafc !important; }
     tfoot td { border-top: 2px solid #e2e8f0; padding: 8px; font-weight: 700; }
-
     /* Badges */
     .badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 12px; font-size: 9px; font-weight: 700; text-transform: uppercase; border: 1px solid transparent; }
     .badge-aberto    { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
@@ -4461,27 +4213,21 @@ function imprimirRelatorio() {
     .badge-reservado { background: #e0f2fe; color: #0369a1; border-color: #7dd3fc; }
     .badge-cancelado { background: #f3f4f6; color: #6b7280; border-color: #d1d5db; }
     .badge-pendente  { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
-
     /* Prioridade */
     .rel-prio { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
     .rel-prio-alta   { background: #fee2e2; color: #991b1b; }
     .rel-prio-media  { background: #fef3c7; color: #92400e; }
     .rel-prio-baixa  { background: #d1fae5; color: #065f46; }
-
     /* Grid */
     .grid-2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-bottom: 14px; }
     .mb-20 { margin-bottom: 14px; }
-
     /* Gráficos */
     .chart-container { height: 180px; position: relative; }
     canvas { max-width: 100%; max-height: 180px; }
-
     /* Rodapé */
     .rel-print-footer { margin-top: 16px; padding-top: 10px; border-top: 2px solid #e2e8f0; text-align: center; font-size: 10px; color: #64748b; }
-
     /* Esconder controles de tela */
     .no-print, .rel-toolbar, .filter-bar, .btn, .btn-icon, .actions-menu { display: none !important; }
-
     @page { margin: 1.2cm; size: A4 landscape; }
   </style>
 </head>
@@ -4489,7 +4235,6 @@ function imprimirRelatorio() {
   ${tempDiv.innerHTML}
 </body>
 </html>`;
-
   const janela = window.open('', '_blank', 'width=1000,height=700');
   if (!janela) { toast('Permita pop-ups para imprimir.', 'warning'); return; }
   janela.document.write(html);
@@ -4502,13 +4247,11 @@ function imprimirRelatorio() {
     }, 800);
   };
 }
-
 // ===== INIT =====
 async function iniciar() {
   // 1. Carregar dados locais primeiro (exibe rápido)
   loadState();
   STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
-
   // 2. Mostrar tela de loading enquanto conecta ao Firebase
   document.getElementById('app').innerHTML = `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0073c8,#003d6e);flex-direction:column;gap:20px">
@@ -4523,43 +4266,35 @@ async function iniciar() {
         <p id="loading-status" style="font-size:11px;color:#94a3b8;margin-top:10px">Iniciando Firebase...</p>
       </div>
     </div>`;
-
   const setProgress = (pct, msg) => {
     const bar = document.getElementById('loading-bar');
     const status = document.getElementById('loading-status');
     if (bar) bar.style.width = pct + '%';
     if (status) status.textContent = msg;
   };
-
   // 3. Conectar Firebase
   setProgress(30, 'Conectando ao Firebase...');
   const connected = await initFirebase();
-
   if (connected) {
     setProgress(60, 'Carregando dados da nuvem...');
     const loaded = await fbLoadAll();
-
     if (loaded) {
       setProgress(80, 'Verificando migração...');
       await migrarLocalParaFirebase();
     }
-
     setProgress(90, 'Configurando listeners em tempo real...');
     setupRealtimeListeners();
   } else {
     setProgress(90, 'Modo offline — usando dados locais...');
     toast('⚠️ Firebase indisponível. Usando dados locais.', 'warning');
   }
-
   setProgress(100, 'Pronto!');
   STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
-
   // 4. Renderizar
   window.addEventListener('beforeunload', saveState);
   iniciarBackupAutomatico();
   setTimeout(() => render(), 300);
 }
-
 // ===== LISTENERS TEMPO REAL =====
 function setupRealtimeListeners() {
   if (!DB_READY) return;
@@ -4588,8 +4323,6 @@ function setupRealtimeListeners() {
     });
   }
 }
-
-
 // ===== BACKUP & RESTAURAÇÃO =====
 function exportarBackupJSON() {
   const dados = {
@@ -4617,7 +4350,6 @@ function exportarBackupJSON() {
   URL.revokeObjectURL(url);
   toast('✅ Backup salvo! Guarde o arquivo em lugar seguro.', 'success');
 }
-
 function importarBackupJSON() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -4633,7 +4365,6 @@ function importarBackupJSON() {
         return;
       }
       if (!confirm('Isso vai SUBSTITUIR todos os dados atuais pelo backup. Confirma?')) return;
-
       // Restaurar no STATE
       if (dados.reservas)        STATE.reservas        = dados.reservas;
       if (dados.chamados)        STATE.chamados        = dados.chamados;
@@ -4645,7 +4376,6 @@ function importarBackupJSON() {
       if (dados.compras)         STATE.compras         = dados.compras;
       if (dados.fornecedores)    STATE.fornecedores    = dados.fornecedores;
       if (dados.nextId)          STATE.nextId          = dados.nextId;
-
       // Enviar tudo para o Firebase
       if (DB_READY) {
         toast('Enviando dados para o Firebase...', 'info');
@@ -4664,7 +4394,6 @@ function importarBackupJSON() {
         }
         await fbSaveConfig();
       }
-
       saveState();
       renderPage(STATE.currentPage);
       toast('✅ Backup restaurado com sucesso!', 'success');
@@ -4674,7 +4403,6 @@ function importarBackupJSON() {
   };
   input.click();
 }
-
 // Backup automático a cada 30 minutos
 function iniciarBackupAutomatico() {
   setInterval(() => {
@@ -4698,7 +4426,6 @@ function iniciarBackupAutomatico() {
     } catch(e) {}
   }, 30 * 60 * 1000); // 30 minutos
 }
-
 // ===== AUTOCOMPLETE USUÁRIOS =====
 function showUserSuggest(input, listId) {
   const val = input.value.toLowerCase();
@@ -4724,14 +4451,12 @@ function showUserSuggest(input, listId) {
   };
   document.addEventListener('mousedown', closeHandler);
 }
-
 function selectUser(nome, inputId, listId) {
   const input = document.getElementById(inputId);
   const list  = document.getElementById(listId);
   if (input) { input.value = nome; input.focus(); }
   if (list)  list.style.display = 'none';
 }
-
 // ===== COMPRAS — funções auxiliares =====
 function adicionarItemCompra() {
   const wrap = document.getElementById('cp-itens-wrap');
@@ -4748,12 +4473,10 @@ function adicionarItemCompra() {
     '<button type="button" class="btn-icon" onclick="this.parentElement.remove();calcularTotalCompra()" style="color:var(--danger)"><i class="ti ti-trash"></i></button>';
   wrap.appendChild(div);
 }
-
 function removerItemCompra(idx) {
   const el = document.getElementById('cpitem-' + idx);
   if (el) { el.remove(); calcularTotalCompra(); }
 }
-
 function calcularTotalCompra() {
   let total = 0;
   $$('.cp-item-row').forEach(function(row) {
@@ -4766,8 +4489,6 @@ function calcularTotalCompra() {
   if (disp) disp.textContent = 'R$ ' + total.toLocaleString('pt-BR', {minimumFractionDigits:2});
   if (hidden) hidden.value = total;
 }
-
-
 Object.assign(window, {
   // Navegação
   navigateTo, renderPage, closeModal,
@@ -4825,7 +4546,7 @@ Object.assign(window, {
   openModalImportacao, baixarTemplateCSV, lerCSVImportacao, executarImportacao,
   STATE,
 });
+// Fim do módulo\
 iniciar();
-
 // ===== EXPOR FUNÇÕES GLOBALMENTE (necessário para módulos ES) =====
-// onclick no HTML não enxerga funções de módulos sem isso
+// onclick no HTML não enxerga funções de módulos sem isso;
