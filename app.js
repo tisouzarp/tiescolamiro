@@ -2523,7 +2523,7 @@ async function salvarChamado(id) {
   const horaCh=$('#ch-hora')?.value || (chamadoAtual?.hora||'');
   if(!titulo||!cat||!prio||!sol||!desc){ toast('Preencha todos os campos obrigatórios.','error'); return; }
   if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c){ Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,criado:dataCh,hora:horaCh,atualizado:dateNow()}); const fbResult = await fbSave('chamados',c.id,c); if(fbResult === true){ toast('Chamado atualizado!'); } else if(fbResult === false){ toast('Chamado atualizado localmente.','info'); } } }
-  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,status:'aberto',criado:dataCh,hora:horaCh,atualizado:dateNow()}; STATE.chamados.push(nc); try { const fbResult = await fbSave('chamados',nc.id,nc); if(fbResult === true){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); } else if(fbResult === false){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado criado localmente.','info'); } } catch(e) { // Firebase falhou, mas dado ja foi salvo em STATE/localStorage toast('Chamado criado localmente (erro na nuvem).','info'); }  }
+  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,status:'aberto',criado:dataCh,hora:horaCh,atualizado:dateNow()}; STATE.chamados.push(nc); try { const fbResult = await fbSave('chamados',nc.id,nc); if(fbResult === true){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); } else if(fbResult === false){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado criado localmente.','info'); } } catch(e) { // Firebase falhou, mas dado ja foi salvo em STATE/localStorage toast('Chamado criado localmente (erro na nuvem).','info'); } }
   closeModal(); saveState(); renderPage(STATE.currentPage);
 }
 // ===== MODALS: INVENTÁRIO =====
@@ -4546,7 +4546,5 @@ Object.assign(window, {
   openModalImportacao, baixarTemplateCSV, lerCSVImportacao, executarImportacao,
   STATE,
 });
-// Fim do módulo\
 iniciar();
-// ===== EXPOR FUNÇÕES GLOBALMENTE (necessário para módulos ES) =====
-// onclick no HTML não enxerga funções de módulos sem isso;
+// ===== EXPOR FUNÇÕES GLOBALMENTE (necessário para módulos ES) =====// onclick no HTML não enxerga funções de módulos sem isso
