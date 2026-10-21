@@ -2299,7 +2299,7 @@ tbody td strong {
 /* Telas médias: sem Fornecedor (segue no Ver detalhes) + células compactas */
 @media (max-width: 1100px) {
   .table-compact .col-forn { display: none; }
-  .table-compact th, .table-compact td { padding: 6px 8px; }
+  .table-compact th, .table-compact td { padding: 6px 8px; vertical-align: top; text-align: left; }
   .table-compact td.col-item { min-width: 150px; max-width: 280px; }
   .table-compact th.col-data { white-space: normal; }
 }

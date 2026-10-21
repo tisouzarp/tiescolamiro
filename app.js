@@ -1,0 +1,4550 @@
+// ===== CAPTURA DE ERROS GLOBAIS =====
+window.onerror = function(msg, src, line, col, err) {
+  document.getElementById('app').innerHTML = `
+    <div style="padding:40px;font-family:monospace;background:#fee;border:2px solid red;margin:20px;border-radius:8px">
+      <h2 style="color:red">❌ Erro JavaScript</h2>
+      <p><b>Mensagem:</b> ${msg}</p>
+      <p><b>Arquivo:</b> ${src}</p>
+      <p><b>Linha:</b> ${line}, Coluna: ${col}</p>
+      <pre style="background:#fff;padding:10px;margin-top:10px;overflow:auto">${err ? err.stack : 'sem stack'}</pre>
+    </div>`;
+  return false;
+};
+window.addEventListener('unhandledrejection', function(e) {
+  const msg = String(e.reason || '');
+  if (msg.includes('MetaMask') || msg.includes('ethereum') || msg.includes('wallet')) return;
+  console.error('Unhandled rejection:', e.reason);
+});
+/* ============================================================
+   TI - ESCOLA MIRÓ | Sistema de Chamados e Reservas v2
+   Responsável: Tiago Souza
+   Banco de dados: Firebase Firestore (nuvem, tempo real)
+   ============================================================ */
+// ===== FIREBASE CONFIG =====
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCNZJsFFYhWFyCDdmhCrmwlzS7cHlzoIks",
+  authDomain: "ti-escola-miro.firebaseapp.com",
+  projectId: "ti-escola-miro",
+  storageBucket: "ti-escola-miro.firebasestorage.app",
+  messagingSenderId: "1042529818892",
+  appId: "1:1042529818892:web:5b366914bb0c5a5c045129"
+};
+// Coleções do Firestore
+const COLECOES = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','notifications','config','compras','fornecedores'];
+// Firebase SDK via CDN (carregado no index.html)
+let db = null;   // Firestore instance
+let DB_READY = false;
+let OFFLINE_MODE = false;
+async function initFirebase() {
+  try {
+    // Aguardar SDK global do Firebase (carregado via script no index.html)
+    let tentativas = 0;
+    while (typeof firebase === 'undefined' && tentativas < 20) {
+      await new Promise(r => setTimeout(r, 200));
+      tentativas++;
+    }
+    if (typeof firebase === 'undefined') throw new Error('Firebase SDK não carregado');
+    const app = firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore(app);
+    window.FB_DB = db;
+    window.FB_FUNS = {
+      collection: (db, col) => db.collection(col),
+      getDocs: (ref) => ref.get(),
+      setDoc: (ref, data) => ref.set(data, { merge: true }),
+      doc: (db, col, id) => db.collection(col).doc(String(id)),
+      deleteDoc: (ref) => ref.delete(),
+      onSnapshot: (ref, cb) => ref.onSnapshot(snap => {
+        const docs = [];
+        snap.forEach(d => docs.push(d.data()));
+        cb({ empty: docs.length === 0, docs: snap.docs });
+      }),
+    };
+    DB_READY = true;
+    console.log('Firebase conectado!');
+    return true;
+  } catch(e) {
+    console.warn('Firebase indisponível, usando localStorage:', e.message);
+    OFFLINE_MODE = true;
+    return false;
+  }
+}
+// ===== FIREBASE HELPERS =====
+async function fbSave(colecao, id, dados) {
+  if (!DB_READY) { saveState(); return Promise.resolve(false); }
+  try {
+    await db.collection(colecao).doc(String(id)).set({ ...dados, _id: id }, { merge: true });
+    return Promise.resolve(true);
+  } catch(e) { console.error('fbSave error:', e); saveState(); return Promise.reject(e); }
+}
+async function fbDelete(colecao, id) {
+  if (!DB_READY) return;
+  try {
+    await db.collection(colecao).doc(String(id)).delete();
+  } catch(e) { console.error('fbDelete error:', e); }
+}
+async function fbLoadAll() {
+  if (!DB_READY) return false;
+  try {
+    const cols = ['users','equipamentos','reservas','chamados','inventario','licencas','acompanhamentos','compras','fornecedores'];
+    for (const col of cols) {
+      const snap = await db.collection(col).get();
+      if (!snap.empty) {
+        const dados = snap.docs.map(d => d.data());
+        if (col === 'users')           STATE.users           = dados;
+        if (col === 'equipamentos')    STATE.equipamentos    = dados;
+        if (col === 'reservas')        STATE.reservas        = dados;
+        if (col === 'chamados')        STATE.chamados        = dados;
+        if (col === 'inventario')      STATE.inventario      = dados;
+        if (col === 'licencas')        STATE.licencas        = dados;
+        if (col === 'acompanhamentos') STATE.acompanhamentos = dados;
+        if (col === 'compras')         STATE.compras         = dados;
+        if (col === 'fornecedores')    STATE.fornecedores    = dados;
+      }
+    }
+    const cfgSnap = await db.collection('config').get();
+    if (!cfgSnap.empty) {
+      const cfg = cfgSnap.docs[0].data();
+      if (cfg.nextId) STATE.nextId = cfg.nextId;
+    }
+    console.log('Dados carregados do Firebase!');
+    return true;
+  } catch(e) {
+    console.error('fbLoadAll error:', e);
+    return false;
+  }
+}
+async function fbSaveConfig() {
+  if (!DB_READY) return;
+  try {
+    await db.collection('config').doc('main').set({ nextId: STATE.nextId });
+  } catch(e) { console.error('fbSaveConfig error:', e); }
+}
+// Migrar dados do localStorage para o Firebase (uma única vez)
+async function migrarLocalParaFirebase() {
+  if (!DB_READY) return;
+  const jaFeito = localStorage.getItem('miro_migrado_firebase');
+  if (jaFeito) return;
+  const localData = localStorage.getItem('miro_ti_v2');
+  if (!localData) return;
+  try {
+    const dados = JSON.parse(localData);
+    showMigracaoModal();
+    const colMap = { users:'users', equipamentos:'equipamentos', reservas:'reservas', chamados:'chamados', inventario:'inventario', licencas:'licencas', acompanhamentos:'acompanhamentos' };
+    for (const [chave, colecao] of Object.entries(colMap)) {
+      if (dados[chave] && dados[chave].length > 0) {
+        for (const item of dados[chave]) {
+          await fbSave(colecao, item.id || item.usuario, item);
+        }
+      }
+    }
+    if (dados.nextId) {
+      STATE.nextId = dados.nextId;
+      await fbSaveConfig();
+    }
+    localStorage.setItem('miro_migrado_firebase', '1');
+    closeMigracaoModal();
+    toast('✅ Dados migrados para a nuvem com sucesso!', 'success');
+    await fbLoadAll();
+  } catch(e) {
+    console.error('Migração falhou:', e);
+    closeMigracaoModal();
+    toast('Migração encontrou um erro. Dados locais preservados.', 'warning');
+  }
+}
+function showMigracaoModal() {
+  let el = document.getElementById('migracao-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'migracao-overlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center';
+    el.innerHTML = `<div style="background:white;border-radius:16px;padding:40px;text-align:center;max-width:380px">
+      <div style="font-size:48px;margin-bottom:16px">☁️</div>
+      <h2 style="font-size:20px;font-weight:800;margin-bottom:8px;color:#1e293b">Migrando para a nuvem</h2>
+      <p style="color:#64748b;font-size:14px;margin-bottom:20px">Seus dados estão sendo enviados para o Firebase. Aguarde um momento...</p>
+      <div style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden">
+        <div style="height:100%;background:#0073c8;border-radius:3px;animation:progresso 2s ease-in-out infinite"></div>
+      </div>
+    </div>`;
+    document.body.appendChild(el);
+  }
+}
+function closeMigracaoModal() {
+  const el = document.getElementById('migracao-overlay');
+  if (el) el.remove();
+}
+// ===== SEGURANÇA: HASH DE SENHA =====
+async function hashSenha(senha) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(senha));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function verificarSenha(senha, hash) {
+  return await hashSenha(senha) === hash;
+}
+// ===== STATE =====
+const STATE = {
+  currentUser: null,
+  currentPage: 'dashboard',
+  notifications: [],
+  users: [
+    { id: 1, nome: 'Tiago Souza', email: 'tiago@escolamiro.com.br', usuario: 'tiago.souza', senha: 'admin123', role: 'admin', status: 'ativo', unidade: 'Matriz', criado: '2024-01-15' },
+    { id: 2, nome: 'Ana Paula Silva', email: 'ana@escolamiro.com.br', usuario: 'ana.silva', senha: '123456', role: 'usuario', status: 'ativo', unidade: 'Matriz', criado: '2024-02-10' },
+    { id: 3, nome: 'Carlos Mendes', email: 'carlos@escolamiro.com.br', usuario: 'carlos.mendes', senha: '123456', role: 'usuario', status: 'ativo', unidade: 'Ensino Médio', criado: '2024-03-05' },
+  ],
+  equipamentos: [
+    { id: 1, nome: 'Notebook Dell Inspiron 15', tipo: 'Notebook', patrimonio: 'NB-001', status: 'disponivel', descricao: '16GB RAM, SSD 512GB', unidade: 'Matriz', local: 'Lab. Informática', marca: 'Dell', modelo: 'Inspiron 15', serie: 'DL20240001' },
+    { id: 2, nome: 'Notebook Lenovo ThinkPad', tipo: 'Notebook', patrimonio: 'NB-002', status: 'reservado', descricao: 'Intel Core i5, 8GB RAM', unidade: 'Matriz', local: 'Sala dos Professores', marca: 'Lenovo', modelo: 'ThinkPad E15', serie: 'LN20240002' },
+    { id: 3, nome: 'iPad Pro 12.9"', tipo: 'iPad', patrimonio: 'IP-001', status: 'disponivel', descricao: 'Wi-Fi, 256GB, iPadOS 17', unidade: 'Matriz', local: 'Depósito TI', marca: 'Apple', modelo: 'iPad Pro 12.9 M2', serie: 'AP20240003' },
+    { id: 4, nome: 'iPad Air 5ª Geração', tipo: 'iPad', patrimonio: 'IP-002', status: 'manutencao', descricao: 'Wi-Fi, 64GB', unidade: 'Matriz', local: 'Manutenção', marca: 'Apple', modelo: 'iPad Air 5', serie: 'AP20240004' },
+    { id: 5, nome: 'Projetor Epson S41', tipo: 'Projetor', patrimonio: 'PJ-001', status: 'disponivel', descricao: '3300 Lumens, HDMI/VGA', unidade: 'Matriz', local: 'Sala 101', marca: 'Epson', modelo: 'S41+', serie: 'EP20240005' },
+    { id: 6, nome: 'Notebook Dell XPS', tipo: 'Notebook', patrimonio: 'NB-EM-001', status: 'disponivel', descricao: 'Intel i7, 16GB, SSD 256GB', unidade: 'Ensino Médio', local: 'Sala TI', marca: 'Dell', modelo: 'XPS 13', serie: 'DL20240010' },
+  ],
+  reservas: [
+    { id: 1, equipamentoTipo: 'Notebook', equipamento: 'Notebook Dell Inspiron 15', solicitante: 'Ana Paula Silva', cargo: 'Professor(a)', sala: '3º Ano', dataInicio: dateNow(), horaInicio: '08:00', horaFim: '12:00', quantidade: 1, status: 'ativo', unidade: 'Matriz', criado: dateNow(), obs: '' },
+    { id: 2, equipamentoTipo: 'iPad', equipamento: 'iPad Pro 12.9"', solicitante: 'Carlos Mendes', cargo: 'Coordenador(a)', sala: '5º Ano', dataInicio: dateNow(), horaInicio: '13:00', horaFim: '17:00', quantidade: 3, status: 'ativo', unidade: 'Matriz', criado: dateNow(), obs: '' },
+    { id: 3, equipamentoTipo: 'Projetor', equipamento: 'Projetor Epson S41', solicitante: 'Ana Paula Silva', cargo: 'Professor(a)', sala: '1º Ano EM', dataInicio: '2025-05-20', horaInicio: '09:00', horaFim: '11:00', quantidade: 1, status: 'fechado', unidade: 'Matriz', criado: '2025-05-19', obs: '' },
+  ],
+  chamados: [
+    { id: 1, titulo: 'Notebook sem áudio', descricao: 'O notebook da sala 3 não está produzindo som nas aulas.', categoria: 'Hardware', prioridade: 'Media', solicitante: 'Ana Paula Silva', atribuido: 'Tiago Souza', status: 'andamento', unidade: 'Matriz', criado: dateNow(), atualizado: dateNow() },
+    { id: 2, titulo: 'Impressora offline', descricao: 'A impressora da secretaria parou de funcionar.', categoria: 'Hardware', prioridade: 'Alta', solicitante: 'Carlos Mendes', atribuido: 'Tiago Souza', status: 'aberto', unidade: 'Matriz', criado: dateNow(), atualizado: dateNow() },
+    { id: 3, titulo: 'Acesso ao Wi-Fi negado', descricao: 'Professores não conseguem acessar a rede Wi-Fi.', categoria: 'Rede', prioridade: 'Alta', solicitante: 'Ana Paula Silva', atribuido: '', status: 'aberto', unidade: 'Ensino Médio', criado: dateNow(), atualizado: dateNow() },
+    { id: 4, titulo: 'Instalação de software', descricao: 'Preciso do LibreOffice instalado no laboratório.', categoria: 'Software', prioridade: 'Baixa', solicitante: 'Carlos Mendes', atribuido: 'Tiago Souza', status: 'fechado', unidade: 'Matriz', criado: '2025-05-28', atualizado: '2025-05-30' },
+  ],
+  inventario: [
+    { id: 1, nome: 'Switch HP 24 portas', categoria: 'Rede', tipo: 'Switch', patrimonio: 'NET-001', marca: 'HP', modelo: 'OfficeConnect 1420', serie: 'HP20240001', local: 'Rack Principal', status: 'ativo', unidade: 'Matriz', ip: '192.168.1.1', garantia: '2026-12-01', obs: 'Rack sala de servidores' },
+    { id: 2, nome: 'Impressora HP LaserJet', categoria: 'Impressora', tipo: 'Laser', patrimonio: 'IMP-001', marca: 'HP', modelo: 'LaserJet Pro M404n', serie: 'HP20240002', local: 'Secretaria', status: 'ativo', unidade: 'Matriz', ip: '192.168.1.50', garantia: '2025-08-01', obs: '' },
+    { id: 3, nome: 'Roteador Cisco', categoria: 'Rede', tipo: 'Roteador', patrimonio: 'NET-002', marca: 'Cisco', modelo: 'RV340', serie: 'CS20240001', local: 'Rack Principal', status: 'ativo', unidade: 'Matriz', ip: '192.168.1.254', garantia: '2027-03-15', obs: 'Gateway principal' },
+  ],
+  licencas: [
+    { id: 1, nome: 'Microsoft 365 Education', fornecedor: 'Microsoft', tipo: 'SaaS', quantidade: 50, chave: 'XXXXX-XXXXX-XXXXX', dataCompra: '2024-01-01', vencimento: '2025-12-31', valor: 2500.00, status: 'ativo', unidade: 'Matriz', obs: 'Inclui Teams, Word, Excel, PowerPoint' },
+    { id: 2, nome: 'Adobe Creative Cloud', fornecedor: 'Adobe', tipo: 'Desktop', quantidade: 5, chave: 'ADOBE-XXXXX', dataCompra: '2024-03-01', vencimento: '2025-06-15', valor: 1800.00, status: 'vencendo', unidade: 'Matriz', obs: 'Laboratório de artes' },
+    { id: 3, nome: 'Windows 11 Pro', fornecedor: 'Microsoft', tipo: 'OEM', quantidade: 20, chave: 'WIN11-XXXXX', dataCompra: '2023-06-01', vencimento: '9999-12-31', valor: 8000.00, status: 'ativo', unidade: 'Ensino Médio', obs: 'Licenças perpétuas' },
+  ],
+  nextId: { reserva: 4, chamado: 5, usuario: 4, equipamento: 7, inventario: 4, licenca: 4, acompanhamento: 1, compra: 1, fornecedor: 1 },
+  acompanhamentos: [], // { id, chamadoId, texto, autor, tipo, criado }
+  compras: [], // { id, item, categoria, descricao, fornecedor, contatoFornecedor, quantidade, valorUnitario, valorTotal, dataCompra, notaFiscal, dataEntrega, status, link, solicitante, setor, unidade, aprovadoPor, obs, garantiaMeses, adicionarInventario, criado, +opcionais: fornecedorId, formaPagamento, parcelas, descontoPercent, descontoValor }
+  fornecedores: [], // { id, nome, contato, telefone, email, observacao, ativo, criado }
+  filtros: { reserva: '', chamado: '', chamadoPrio: '', reservaSearch: '', chamadoSearch: '' },
+  sla: { Alta: 2, Media: 8, Baixa: 24 }, // horas de SLA por prioridade
+};
+function sortByDate(list, campo='dataInicio', asc=true) {
+  return [...list].sort((a,b) => {
+    const da = a[campo] || '';
+    const db = b[campo] || '';
+    return asc ? da.localeCompare(db) : db.localeCompare(da);
+  });
+}
+function dateNow() { return new Date().toISOString().split('T')[0]; }
+function formatDate(d) { if (!d || d === '9999-12-31') return d === '9999-12-31' ? 'Perpétua' : '-'; const [y,m,day] = d.split('-'); return `${day}/${m}/${y}`; }
+function initials(nome) { return (nome||'??').split(' ').slice(0,2).map(n=>n[0]).join('').toUpperCase(); }
+const $ = (s,c=document) => c.querySelector(s);
+const $$ = (s,c=document) => [...c.querySelectorAll(s)];
+// ===== TOAST =====
+function toast(msg, type='success') {
+  const icons = {success:'ti-circle-check', error:'ti-alert-circle', info:'ti-info-circle', warning:'ti-alert-triangle'};
+  let tc = $('#toast-container');
+  if (!tc) { tc = document.createElement('div'); tc.id='toast-container'; tc.className='toast-container'; document.body.appendChild(tc); }
+  const t = document.createElement('div');
+  t.className=`toast toast-${type}`;
+  t.innerHTML=`<i class="ti ${icons[type]} toast-icon"></i><span class="toast-msg">${msg}</span>`;
+  tc.appendChild(t);
+  setTimeout(()=>t.remove(), 3500);
+}
+function openModal(html, id='main-modal') {
+  let o = $(`#${id}`); if(o) o.remove();
+  o = document.createElement('div'); o.id=id; o.className='modal-overlay'; o.innerHTML=html;
+  document.body.appendChild(o);
+  o.addEventListener('mousedown', e=>{
+    // Só fecha se: botão esquerdo (0) E clique direto no overlay escuro (não em filhos)
+    if(e.button===0 && e.target===o) {
+      // Aguarda mouseup para confirmar que não foi início de seleção de texto
+      const onUp = ev => { if(ev.target===o) closeModal(id); o.removeEventListener('mouseup',onUp); };
+      o.addEventListener('mouseup', onUp);
+    }
+  });
+  // Impede que botão direito feche o modal
+  o.addEventListener('contextmenu', e=>{ if(e.target===o) e.stopPropagation(); });
+}
+function closeModal(id='main-modal') { const e=$(`#${id}`); if(e) e.remove(); }
+// ===== PERSISTENCE =====
+function saveState() {
+  try {
+    localStorage.setItem('miro_ti_v2', JSON.stringify({
+      reservas:STATE.reservas, chamados:STATE.chamados,
+      equipamentos:STATE.equipamentos, users:STATE.users,
+      inventario:STATE.inventario, licencas:STATE.licencas,
+      nextId:STATE.nextId, notifications:STATE.notifications.slice(0,30),
+      acompanhamentos:STATE.acompanhamentos, compras:(STATE.compras||[]),
+      fornecedores:(STATE.fornecedores||[])
+    }));
+    if (STATE.currentUser)
+      localStorage.setItem('miro_ti_session', JSON.stringify({ userId: STATE.currentUser.id, page: STATE.currentPage }));
+    else
+      localStorage.removeItem('miro_ti_session');
+  } catch(e) {}
+}
+function loadState() {
+  try {
+    const s = localStorage.getItem('miro_ti_v2');
+    if (s) { const d=JSON.parse(s); ['reservas','chamados','equipamentos','users','inventario','licencas','nextId','notifications','acompanhamentos','compras','fornecedores'].forEach(k=>{ if(d[k]) STATE[k]=d[k]; }); }
+    const sess = localStorage.getItem('miro_ti_session');
+    if (sess) {
+      const { userId } = JSON.parse(sess);
+      const user = STATE.users.find(u => u.id === userId && u.status === 'ativo');
+      // Página inicial é sempre o Dashboard (ignora página salva na sessão)
+      if (user) { STATE.currentUser = user; STATE.currentPage = 'dashboard'; }
+    }
+  } catch(e) {}
+}
+// ===== NOTIFICATIONS =====
+function addNotification(titulo, sub, icon='ti-info-circle') {
+  STATE.notifications.unshift({ titulo, sub, icon, data: dateNow(), lida: false });
+  updateNotifBadge();
+}
+function updateNotifBadge() {
+  const unread = STATE.notifications.filter(n=>!n.lida).length;
+  const dot = $('.notification-dot');
+  if (dot) dot.style.display = unread > 0 ? '' : 'none';
+  const badge = $('.nav-badge[data-badge="chamados"]');
+  if (badge) badge.textContent = STATE.chamados.filter(c=>c.status==='aberto').length;
+}
+// ===== RENDER =====
+function render() {
+  const app = $('#app');
+  if (!STATE.currentUser) { app.innerHTML = renderAuth(); attachAuthEvents(); }
+  else { app.innerHTML = renderLayout(); attachLayoutEvents(); renderPage(STATE.currentPage); updateNotifBadge(); }
+  window.scrollTo(0,0);
+}
+// ===== AUTH (sem cadastro público) =====
+function renderAuth() {
+  return `
+  <div class="auth-wrapper">
+    <div class="auth-card auth-card-compact">
+      <div class="auth-logo">
+        <img src="logo.png" alt="Escola Miró" class="auth-logo-img-real" onerror="this.style.display='none'">
+        <h1>TI - Escola Miró</h1>
+        <p>Sistema de Chamados e Reservas</p>
+      </div>
+      <div class="form-group">
+        <label>Usuário</label>
+        <div class="input-icon"><i class="ti ti-user"></i><input id="login-user" type="text" placeholder="Seu Usuário" /></div>
+      </div>
+      <div class="form-group">
+        <label>Senha</label>
+        <div class="input-icon"><i class="ti ti-lock"></i><input id="login-pass" type="password" placeholder="••••••••" /></div>
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-login"><i class="ti ti-login"></i> Entrar no sistema</button>
+      <p style="text-align:center;margin-top:20px;font-size:12px;color:var(--gray-400)">
+        Problemas de acesso? Fale com setor de TI:<br><strong>Tiago Souza</strong>
+      </p>
+      <div class="auth-copyright">
+        Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.
+      </div>
+    </div>
+  </div>`;
+}
+function attachAuthEvents() {
+  $('#btn-login').addEventListener('click', doLogin);
+  $('#login-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+}
+async function doLogin() {
+  const u = $('#login-user').value.trim();
+  const p = $('#login-pass').value;
+  if (!u || !p) { toast('Preencha usuário e senha.', 'error'); return; }
+  // Suporta senha em texto puro (legado) e hasheada
+  let found = null;
+  for (const usr of STATE.users) {
+    if ((usr.usuario!==u && usr.email!==u) || usr.status!=='ativo') continue;
+    // Verificar se é hash (64 chars hex) ou texto puro
+    let ok = false;
+    if (usr.senha && usr.senha.length === 64 && /^[0-9a-f]+$/.test(usr.senha)) {
+      ok = await verificarSenha(p, usr.senha);
+    } else {
+      ok = usr.senha === p; // legado texto puro
+      if (ok) {
+        // Migrar para hash automaticamente
+        const h = await hashSenha(p);
+        usr.senha = h;
+        fbSave('users', usr.id, usr);
+      }
+    }
+    if (ok) { found = usr; break; }
+  }
+  if (!found) { toast('Usuário ou senha inválidos.', 'error'); return; }
+  STATE.currentUser = found;
+  render();
+  toast(`Bem-vindo, ${found.nome.split(' ')[0]}!`);
+}
+// ===== LAYOUT =====
+function renderLayout() {
+  const u = STATE.currentUser;
+  const isAdmin = u.role === 'admin';
+  const openCh = STATE.chamados.filter(c=>c.status==='aberto').length;
+  const unreadNotifs = STATE.notifications.filter(n=>!n.lida).length;
+  const licVencendo = STATE.licencas.filter(l=>l.status==='vencendo'||diasParaVencer(l.vencimento)<=30).length;
+  return `
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <img src="logo.png" alt="Miró" class="sidebar-logo-img" onerror="this.style.display='none'">
+          <div class="sidebar-logo-text"><h2>TI - Escola Miró</h2><span>Tiago Souza</span></div>
+        </div>
+      </div>
+      <div class="sidebar-user">
+        <div class="sidebar-avatar">${initials(u.nome)}</div>
+        <div class="sidebar-user-info"><h4>${u.nome.split(' ').slice(0,2).join(' ')}</h4><span>${isAdmin?'Administrador':'Usuário'}</span></div>
+      </div>
+      <nav class="sidebar-nav">
+        ${isAdmin ? `
+        <span class="nav-section-title">Geral</span>
+        <button class="nav-item ${STATE.currentPage==='dashboard'?'active':''}" data-page="dashboard"><i class="ti ti-layout-dashboard"></i> Dashboard</button>
+        <button class="nav-item ${STATE.currentPage==='calendario'?'active':''}" data-page="calendario"><i class="ti ti-calendar-month"></i> Calendário</button>
+        <button class="nav-item ${STATE.currentPage==='reservas'?'active':''}" data-page="reservas"><i class="ti ti-calendar-event"></i> Reservas</button>
+        <button class="nav-item ${STATE.currentPage==='reservas-ativas'?'active':''}" data-page="reservas-ativas"><i class="ti ti-calendar-check"></i> Reservas Abertas</button>
+        <button class="nav-item ${STATE.currentPage==='chamados'?'active':''}" data-page="chamados">
+          <i class="ti ti-headset"></i> Chamados
+          ${openCh>0?`<span class="nav-badge" data-badge="chamados">${openCh}</span>`:''}
+        </button>
+        <button class="nav-item ${STATE.currentPage==='arquivados'?'active':''}" data-page="arquivados"><i class="ti ti-archive"></i> Arquivados</button>
+        <span class="nav-section-title">Infraestrutura</span>
+        <button class="nav-item ${STATE.currentPage==='inventario'?'active':''}" data-page="inventario"><i class="ti ti-server"></i> Inventário TI</button>
+        <button class="nav-item ${STATE.currentPage==='licencas'?'active':''}" data-page="licencas">
+          <i class="ti ti-license"></i> Licenças
+          ${licVencendo>0?`<span class="nav-badge" style="background:var(--warning)">${licVencendo}</span>`:''}
+        </button>
+        <span class="nav-section-title">Unidades</span>
+        <!-- MATRIZ SUBMENU -->
+        <button class="nav-item nav-group-toggle ${['matriz','mz-reservas','mz-chamados','mz-equipamentos','mz-licencas','mz-usuarios','mz-relatorios'].includes(STATE.currentPage)?'active':''}" onclick="toggleNavGroup('grupo-matriz')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-4a3 3 0 0 1 6 0v4"/><rect x="9" y="10" width="2" height="3"/><rect x="13" y="10" width="2" height="3"/></svg>
+          Matriz
+          <i class="ti ti-chevron-down nav-chevron" style="margin-left:auto;font-size:13px;transition:.2s"></i>
+        </button>
+        <div id="grupo-matriz" class="nav-group" style="display:${['matriz','mz-reservas','mz-chamados','mz-equipamentos','mz-licencas','mz-usuarios','mz-relatorios'].includes(STATE.currentPage)?'block':'none'}">
+          <button class="nav-item nav-sub ${STATE.currentPage==='matriz'?'active':''}" data-page="matriz"><i class="ti ti-layout-dashboard"></i> Visão Geral</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-reservas'?'active':''}" data-page="mz-reservas"><i class="ti ti-calendar-event"></i> Reservas</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-chamados'?'active':''}" data-page="mz-chamados"><i class="ti ti-headset"></i> Chamados</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-equipamentos'?'active':''}" data-page="mz-equipamentos"><i class="ti ti-devices"></i> Equipamentos</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-licencas'?'active':''}" data-page="mz-licencas"><i class="ti ti-license"></i> Licenças</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-usuarios'?'active':''}" data-page="mz-usuarios"><i class="ti ti-users"></i> Usuários</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='mz-relatorios'?'active':''}" data-page="mz-relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
+        </div>
+        <!-- ENSINO MÉDIO SUBMENU -->
+        <button class="nav-item nav-group-toggle ${['ensinomedio','em-reservas','em-chamados','em-equipamentos','em-licencas','em-usuarios','em-relatorios'].includes(STATE.currentPage)?'active':''}" onclick="toggleNavGroup('grupo-em')">
+          <i class="ti ti-building"></i>
+          Ensino Médio
+          <i class="ti ti-chevron-down nav-chevron" style="margin-left:auto;font-size:13px;transition:.2s"></i>
+        </button>
+        <div id="grupo-em" class="nav-group" style="display:${['ensinomedio','em-reservas','em-chamados','em-equipamentos','em-licencas','em-usuarios','em-relatorios'].includes(STATE.currentPage)?'block':'none'}">
+          <button class="nav-item nav-sub ${STATE.currentPage==='ensinomedio'?'active':''}" data-page="ensinomedio"><i class="ti ti-layout-dashboard"></i> Visão Geral</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-reservas'?'active':''}" data-page="em-reservas"><i class="ti ti-calendar-event"></i> Reservas</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-chamados'?'active':''}" data-page="em-chamados"><i class="ti ti-headset"></i> Chamados</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-equipamentos'?'active':''}" data-page="em-equipamentos"><i class="ti ti-devices"></i> Equipamentos</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-licencas'?'active':''}" data-page="em-licencas"><i class="ti ti-license"></i> Licenças</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-usuarios'?'active':''}" data-page="em-usuarios"><i class="ti ti-users"></i> Usuários</button>
+          <button class="nav-item nav-sub ${STATE.currentPage==='em-relatorios'?'active':''}" data-page="em-relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
+        </div>
+        <span class="nav-section-title">Administração</span>
+        <button class="nav-item ${STATE.currentPage==='equipamentos'?'active':''}" data-page="equipamentos"><i class="ti ti-devices"></i> Equipamentos</button>
+        <button class="nav-item ${STATE.currentPage==='usuarios'?'active':''}" data-page="usuarios"><i class="ti ti-users"></i> Usuários</button>
+        <button class="nav-item ${STATE.currentPage==='compras'?'active':''}" data-page="compras"><i class="ti ti-shopping-cart"></i> Compras</button>
+        <button class="nav-item ${STATE.currentPage==='relatorios'?'active':''}" data-page="relatorios"><i class="ti ti-chart-bar"></i> Relatórios</button>
+        <button class="nav-item ${STATE.currentPage==='configuracoes'?'active':''}" data-page="configuracoes"><i class="ti ti-settings"></i> Configurações</button>
+        ` : `
+        <span class="nav-section-title">Menu</span>
+        <button class="nav-item ${STATE.currentPage==='novaReserva'?'active':''}" data-page="novaReserva"><i class="ti ti-calendar-plus"></i> Nova Reserva</button>
+        <button class="nav-item ${STATE.currentPage==='novoChamado'?'active':''}" data-page="novoChamado"><i class="ti ti-headset"></i> Abrir Chamado</button>
+        <button class="nav-item ${STATE.currentPage==='meuschamados'?'active':''}" data-page="meuschamados"><i class="ti ti-list-check"></i> Meus Chamados</button>
+        `}
+      </nav>
+      <div class="sidebar-footer">
+        <button class="nav-item" id="btn-logout" style="color:rgba(255,255,255,.5)"><i class="ti ti-logout"></i> Sair</button>
+      </div>
+    </aside>
+    <div class="main-content">
+      <header class="main-header">
+        <h1 class="page-title" id="page-title">Dashboard</h1>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${DB_READY?'#d1fae5':'#fee2e2'};color:${DB_READY?'#065f46':'#991b1b'}">
+            <span style="width:7px;height:7px;border-radius:50%;background:${DB_READY?'#10b981':'#ef4444'};display:inline-block"></span>
+            ${DB_READY?'Nuvem ✓':'Offline ⚠️'}
+          </div>
+        </div>
+        <div class="header-actions">
+          ${isAdmin ? `
+          <div style="position:relative">
+            <button class="btn-icon" id="notif-btn" title="Notificações">
+              <i class="ti ti-bell" style="font-size:20px"></i>
+              <span class="notification-dot" style="display:${unreadNotifs>0?'':'none'}"></span>
+            </button>
+          </div>` : ''}
+          <button class="btn btn-primary btn-sm" id="btn-new-action"><i class="ti ti-plus"></i> Novo</button>
+        </div>
+      </header>
+      <main class="page-content" id="page-content"></main>
+      <footer class="main-footer">
+        Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.
+      </footer>
+    </div>
+  </div>`;
+}
+function attachLayoutEvents() {
+  $$('.nav-item[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => navigateTo(btn.dataset.page));
+  });
+  $('#btn-logout').addEventListener('click', ()=>{ STATE.currentUser=null; STATE.currentPage='dashboard'; localStorage.removeItem('miro_ti_session'); render(); });
+  const notifBtn = $('#notif-btn');
+  if (notifBtn) notifBtn.addEventListener('click', e=>{ e.stopPropagation(); showNotifPanel(); });
+  $('#btn-new-action').addEventListener('click', ()=>{
+    const p = STATE.currentPage;
+    if (['dashboard','reservas','calendario','novaReserva','reservas-ativas'].includes(p)) openModalReserva();
+    else if (['chamados','novoChamado'].includes(p)) openModalChamado();
+    else if (p==='inventario') openModalInventario();
+    else if (p==='licencas') openModalLicenca();
+    else if (p==='equipamentos'||p==='matriz'||p==='ensinomedio'||p==='mz-equipamentos'||p==='em-equipamentos') openModalEquipamento(p.startsWith('em-')?'Ensino Médio':'Matriz');
+    else if (p==='mz-chamados'||p==='em-chamados') openModalChamado();
+    else if (p==='mz-reservas'||p==='em-reservas') openModalReserva();
+    else if (p==='mz-licencas'||p==='em-licencas') openModalLicenca();
+    else if (p==='mz-usuarios'||p==='em-usuarios') openModalUsuario();
+    else if (p==='compras') openModalCompra();
+    else if (p==='usuarios') openModalUsuario();
+    else openModalReserva();
+  });
+}
+function navigateTo(page) {
+  STATE.currentPage = page;
+  const titles = { dashboard:'Dashboard', calendario:'Calendário', reservas:'Reservas', chamados:'Chamados', arquivados:'Arquivados', inventario:'Inventário TI', licencas:'Licenças de Software', matriz:'Matriz — Visão Geral', ensinomedio:'Ensino Médio — Visão Geral', equipamentos:'Equipamentos', usuarios:'Usuários', relatorios:'Relatórios & Gráficos', novaReserva:'Nova Reserva', novoChamado:'Abrir Chamado', meuschamados:'Meus Chamados', 'mz-reservas':'Matriz — Reservas', 'mz-chamados':'Matriz — Chamados', 'mz-equipamentos':'Matriz — Equipamentos', 'mz-licencas':'Matriz — Licenças', 'mz-usuarios':'Matriz — Usuários', 'mz-relatorios':'Matriz — Relatórios', 'em-reservas':'Ensino Médio — Reservas', 'em-chamados':'Ensino Médio — Chamados', 'em-equipamentos':'Ensino Médio — Equipamentos', 'em-licencas':'Ensino Médio — Licenças', 'em-usuarios':'Ensino Médio — Usuários', 'em-relatorios':'Ensino Médio — Relatórios', 'compras':'Compras de TI', 'reservas-ativas':'Reservas Abertas' };
+  const titleEl = $('#page-title');
+  if (titleEl) titleEl.textContent = titles[page] || page;
+  $$('.nav-item[data-page]').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
+  renderPage(page);
+  window.scrollTo(0,0);
+}
+function renderPage(page) {
+  const content = $('#page-content');
+  if (!content) return;
+  const pages = { dashboard, calendario, reservas, chamados, arquivados, inventario, licencas, matriz, ensinomedio, equipamentos, usuarios, relatorios, novaReserva, novoChamado, meuschamados,
+    'mz-reservas': ()=>paginaUnidade('reservas','Matriz'),
+    'mz-chamados': ()=>paginaUnidade('chamados','Matriz'),
+    'mz-equipamentos': ()=>paginaUnidade('equipamentos','Matriz'),
+    'mz-licencas': ()=>paginaUnidade('licencas','Matriz'),
+    'mz-usuarios': ()=>paginaUnidade('usuarios','Matriz'),
+    'mz-relatorios': ()=>paginaUnidade('relatorios','Matriz'),
+    'em-reservas': ()=>paginaUnidade('reservas','Ensino Médio'),
+    'em-chamados': ()=>paginaUnidade('chamados','Ensino Médio'),
+    'em-equipamentos': ()=>paginaUnidade('equipamentos','Ensino Médio'),
+    'em-licencas': ()=>paginaUnidade('licencas','Ensino Médio'),
+    'em-usuarios': ()=>paginaUnidade('usuarios','Ensino Médio'),
+    'em-relatorios': ()=>paginaUnidade('relatorios','Ensino Médio'),
+    'reservas-ativas': reservasAtivasPage,
+    'compras': comprasPage,
+    'configuracoes': configuracoes,
+  };
+  content.innerHTML = pages[page] ? pages[page]() : '<p>Página não encontrada.</p>';
+  attachPageEvents(page);
+}
+function attachPageEvents(page) {
+  if (page==='dashboard') setTimeout(()=>{ renderChartStatus(); renderChartCat(); renderChartTendencia(); }, 100);
+  if (page==='reservas') attachTableFilter('search-reserva', 'filter-reserva-status', 'reservas-tbody', ()=>renderReservasRows(getFilteredReservas()));
+  if (page==='chamados') attachChamadoFilters();
+  if (page==='usuarios') attachTableFilter('search-user', 'filter-user-status', 'users-tbody', ()=>renderUserRows(STATE.users));
+  if (page==='equipamentos') attachEquipFilter();
+  if (page==='inventario') attachInvFilter();
+  if (page==='relatorios') setTimeout(()=>{ renderRelatorioCharts(); }, 200);
+  if (page==='calendario') renderCalendario();
+  if (page==='matriz') attachUnidadeFilter('Matriz');
+  if (page==='ensinomedio') attachUnidadeFilter('Ensino Médio');
+  if (page==='mz-equipamentos') attachUnidadeEquipFilter('Matriz');
+  if (page==='em-equipamentos') attachUnidadeEquipFilter('Ensino Médio');
+  if (page==='mz-relatorios') setTimeout(()=>renderUnidadeCharts('Matriz'),200);
+  if (page==='em-relatorios') setTimeout(()=>renderUnidadeCharts('Ensino Médio'),200);
+}
+function attachChamadoFilters() {
+  const search  = $('#search-chamado');
+  const fStatus = $('#filter-chamado-status');
+  const fPrio   = $('#filter-chamado-prio');
+  const tbody   = $('#chamados-tbody');
+  // Restaurar filtros salvos
+  if (search  && STATE.filtros.chamadoSearch) search.value  = STATE.filtros.chamadoSearch;
+  if (fStatus && STATE.filtros.chamado)       fStatus.value = STATE.filtros.chamado;
+  if (fPrio   && STATE.filtros.chamadoPrio)   fPrio.value   = STATE.filtros.chamadoPrio;
+  const refresh = () => {
+    if (tbody) tbody.innerHTML = renderChamadosRows(getFilteredChamados());
+  };
+  // Aplicar filtro atual imediatamente (restauração)
+  refresh();
+  if (search)  search.addEventListener('input',  () => { STATE.filtros.chamadoSearch = search.value;  refresh(); });
+  if (fStatus) fStatus.addEventListener('change', () => { STATE.filtros.chamado       = fStatus.value; refresh(); });
+  if (fPrio)   fPrio.addEventListener('change',   () => { STATE.filtros.chamadoPrio   = fPrio.value;   refresh(); });
+}
+function attachTableFilter(searchId, filterId, tbodyId, getFn) {
+  const s=$(`#${searchId}`), f=$(`#${filterId}`);
+  // Restaurar filtros salvos
+  if(s && STATE.filtros[searchId.replace('search-','')+'Search']) s.value=STATE.filtros[searchId.replace('search-','')+'Search']||'';
+  if(f && STATE.filtros[filterId.replace('filter-','').replace('-status','').replace('-prio','')]) {
+    f.value=STATE.filtros[filterId.replace('filter-','').replace('-status','').replace('-prio','')]||'';
+  }
+  if(s) s.addEventListener('input', ()=>{
+    STATE.filtros[searchId.replace('search-','')+'Search']=s.value;
+    const el=$(`#${tbodyId}`); if(el) el.innerHTML=getFn();
+  });
+  if(f) f.addEventListener('change', ()=>{
+    STATE.filtros[filterId.replace('filter-','').replace('-status','').replace('-prio','')]=f.value;
+    const el=$(`#${tbodyId}`); if(el) el.innerHTML=getFn();
+  });
+}
+// ===== NOTIFICATION PANEL =====
+function showNotifPanel() {
+  const existing=$('.notif-panel'); if(existing){existing.remove();return;}
+  const panel=document.createElement('div'); panel.className='notif-panel';
+  panel.innerHTML=`
+    <div class="notif-header"><span>Notificações</span>
+      <button class="btn-icon" onclick="STATE.notifications.forEach(n=>n.lida=true);this.closest('.notif-panel').remove();updateNotifBadge();saveState();" title="Marcar todas lidas"><i class="ti ti-checks" style="font-size:14px"></i></button>
+    </div>
+    ${STATE.notifications.length===0 ? '<p style="padding:20px;text-align:center;font-size:12px;color:var(--gray-400)">Nenhuma notificação</p>'
+      : STATE.notifications.slice(0,10).map(n=>`
+      <div class="notif-item ${!n.lida?'unread':''}">
+        <div class="notif-icon"><i class="ti ${n.icon}"></i></div>
+        <div class="notif-text"><div class="notif-title">${n.titulo}</div><div class="notif-sub">${n.sub} · ${formatDate(n.data)}</div></div>
+      </div>`).join('')}`;
+  $('#notif-btn').parentElement.appendChild(panel);
+  STATE.notifications.forEach(n=>n.lida=true);
+  setTimeout(updateNotifBadge,100);
+  document.addEventListener('click',()=>panel.remove(),{once:true});
+}
+// ===== DASHBOARD USUÁRIO COMUM =====
+function dashboardUsuario() {
+  const u = STATE.currentUser;
+  const minhasReservas = STATE.reservas.filter(r => r.solicitante === u.nome);
+  const meusChamados = STATE.chamados.filter(c => c.solicitante === u.nome);
+  const reservasAtivas = minhasReservas.filter(r => r.status === 'ativo');
+  const chamadosAbertos = meusChamados.filter(c => c.status === 'aberto' || c.status === 'andamento');
+  const hoje = dateNow();
+  const reservasHoje = reservasAtivas.filter(r => r.dataInicio === hoje);
+  return `
+  <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div class="stat-card clickable" onclick="navigateTo('novaReserva')">
+      <div class="stat-icon blue"><i class="ti ti-calendar-event"></i></div>
+      <div class="stat-info"><div class="stat-number">${reservasAtivas.length}</div><div class="stat-label">Minhas Reservas</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('meuschamados')">
+      <div class="stat-icon red"><i class="ti ti-headset"></i></div>
+      <div class="stat-info"><div class="stat-number">${chamadosAbertos.length}</div><div class="stat-label">Chamados Abertos</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('meuschamados')">
+      <div class="stat-icon green"><i class="ti ti-circle-check"></i></div>
+      <div class="stat-info"><div class="stat-number">${meusChamados.filter(c=>c.status==='fechado').length}</div><div class="stat-label">Chamados Fechados</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon orange"><i class="ti ti-calendar-today"></i></div>
+      <div class="stat-info"><div class="stat-number">${reservasHoje.length}</div><div class="stat-label">Reservas Hoje</div></div>
+    </div>
+  </div>
+  <div class="grid-2 mb-20" style="margin-top:0">
+    <div class="card">
+      <div class="card-header" style="background:var(--primary-light)">
+        <span class="card-title"><i class="ti ti-calendar-event" style="color:var(--primary)"></i> Minhas Reservas Ativas</span>
+        <button class="btn btn-primary btn-sm" onclick="openModalReserva()"><i class="ti ti-plus"></i> Nova</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${reservasAtivas.length === 0
+          ? '<div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva ativa</h3><p>Clique em Nova Reserva para criar.</p></div>'
+          : reservasAtivas.slice(0,8).map(r=>`
+            <div class="today-item" style="padding:12px 16px">
+              <div class="today-item-icon" style="background:var(--primary-light);color:var(--primary)">
+                <i class="ti ti-device-laptop"></i>
+              </div>
+              <div class="today-item-info">
+                <div class="today-item-title">${r.equipamento}</div>
+                <div class="today-item-sub">${r.sala} · ${formatDate(r.dataInicio)} · ${r.horaInicio}–${r.horaFim}</div>
+              </div>
+              <span class="badge badge-${r.status}">${r.status}</span>
+            </div>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header" style="background:var(--primary-light)">
+        <span class="card-title"><i class="ti ti-headset" style="color:var(--primary)"></i> Meus Chamados</span>
+        <button class="btn btn-primary btn-sm" onclick="openModalChamado()"><i class="ti ti-plus"></i> Novo</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${meusChamados.length === 0
+          ? '<div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Nenhum chamado</h3></div>'
+          : meusChamados.slice(0,8).map(c=>`
+            <div class="today-item" style="padding:12px 16px">
+              <div class="today-item-icon" style="background:${c.status==='fechado'?'var(--success-bg)':c.prioridade==='Alta'?'var(--danger-bg)':'var(--warning-bg)'};color:${c.status==='fechado'?'var(--success)':c.prioridade==='Alta'?'var(--danger)':'var(--warning)'}">
+                <i class="ti ${c.status==='fechado'?'ti-check':'ti-urgent'}"></i>
+              </div>
+              <div class="today-item-info">
+                <div class="today-item-title">${c.titulo}</div>
+                <div class="today-item-sub">${c.categoria} · ${formatDate(c.criado)} · ${c.atribuido?'Atribuído: '+c.atribuido:'Aguardando atribuição'}</div>
+              </div>
+              <span class="badge badge-${c.status}">${c.status}</span>
+            </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+// ===== DASHBOARD =====
+function dashboard() {
+  if (STATE.currentUser && STATE.currentUser.role !== 'admin') return dashboardUsuario();
+  const hoje = dateNow();
+  const reservasHoje = STATE.reservas.filter(r=>r.dataInicio===hoje && r.status==='ativo');
+  const abertos = STATE.chamados.filter(c=>c.status==='aberto').length;
+  const andamento = STATE.chamados.filter(c=>c.status==='andamento').length;
+  const fechados = STATE.chamados.filter(c=>c.status==='fechado').length;
+  const reservasAtivas = STATE.reservas.filter(r=>r.status==='ativo').length;
+  const licVencendo = STATE.licencas.filter(l=>diasParaVencer(l.vencimento)<=30 && l.status!=='expirado').length;
+  return `
+  <div class="stats-grid">
+    <div class="stat-card clickable" onclick="navigateTo('reservas-ativas')">
+      <div class="stat-icon blue"><i class="ti ti-calendar-event"></i></div>
+      <div class="stat-info"><div class="stat-number">${reservasAtivas}</div><div class="stat-label">Reservas Ativas</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('chamados')">
+      <div class="stat-icon red"><i class="ti ti-alert-circle"></i></div>
+      <div class="stat-info"><div class="stat-number">${abertos}</div><div class="stat-label">Chamados Abertos</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('chamados')">
+      <div class="stat-icon orange"><i class="ti ti-loader"></i></div>
+      <div class="stat-info"><div class="stat-number">${andamento}</div><div class="stat-label">Em Andamento</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('arquivados')">
+      <div class="stat-icon green"><i class="ti ti-circle-check"></i></div>
+      <div class="stat-info"><div class="stat-number">${fechados}</div><div class="stat-label">Chamados Fechados</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('inventario')">
+      <div class="stat-icon teal"><i class="ti ti-server"></i></div>
+      <div class="stat-info"><div class="stat-number">${STATE.inventario.length}</div><div class="stat-label">Itens no Inventário</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+    <div class="stat-card clickable" onclick="navigateTo('licencas')" style="${licVencendo>0?'border-color:var(--warning)':''}">
+      <div class="stat-icon" style="background:${licVencendo>0?'var(--warning-bg)':'#ede9fe'};color:${licVencendo>0?'var(--warning)':'#7b1fa2'}"><i class="ti ti-license"></i></div>
+      <div class="stat-info"><div class="stat-number">${licVencendo}</div><div class="stat-label">Licenças a Vencer</div></div>
+      <i class="ti ti-arrow-right stat-arrow"></i>
+    </div>
+  </div>
+  <!-- RESERVAS DO DIA EM DESTAQUE -->
+  <div class="card mb-20" style="border-left:4px solid var(--primary)">
+    <div class="card-header" style="background:var(--primary-light)">
+      <span class="card-title"><i class="ti ti-calendar-today" style="color:var(--primary)"></i> Reservas de Hoje — ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</span>
+      <button class="btn btn-primary btn-sm" onclick="openModalReserva()"><i class="ti ti-plus"></i> Nova Reserva</button>
+    </div>
+    <div class="card-body" style="padding:0">
+      ${reservasHoje.length===0
+        ? '<div class="empty-state" style="padding:24px"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva para hoje</h3></div>'
+        : `<table style="width:100%">
+            <thead><tr><th>Equipamento</th><th>Solicitante</th><th>Cargo</th><th>Turma/Sala</th><th>Horário</th><th>Qtd</th><th>Unidade</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody>${reservasHoje.map(r=>`
+              <tr>
+                <td><strong>${r.equipamento}</strong><br><span class="text-muted">${r.equipamentoTipo}</span></td>
+                <td>${r.solicitante}</td><td><span class="text-muted">${r.cargo}</span></td>
+                <td><strong>${r.sala}</strong></td>
+                <td>${r.aulas&&r.aulas.length?`<span class="badge badge-reservado" style="font-size:11px">${getLabelAulas(r.aulas)}</span>`:r.horaInicio?`<span class="badge badge-reservado">${r.horaInicio}–${r.horaFim}</span>`:"—"}</td>
+                <td><strong>${r.quantidade}</strong></td><td>${r.unidade||'Matriz'}</td>
+                <td><span class="badge badge-${r.status}">${r.status}</span></td>
+                <td><div style="display:flex;gap:4px">
+                  <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                  <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('dashboard')" title="Fechar" style="color:var(--success)"><i class="ti ti-check"></i></button>
+                </div></td>
+              </tr>`).join('')}
+            </tbody></table>`}
+    </div>
+  </div>
+  <!-- RESERVAS ABERTAS (não do dia de hoje) -->
+  ${(() => {
+    const abertas = sortByDate(STATE.reservas.filter(r=>r.status==='ativo'&&r.dataInicio!==hoje));
+    if(!abertas.length) return '';
+    const top = abertas.slice(0,5);
+    let diaAtual = null, linhas = '';
+    for (const r of top) {
+      if (r.dataInicio !== diaAtual) {
+        diaAtual = r.dataInicio;
+        const doDia = top.filter(x => x.dataInicio === diaAtual).length;
+        linhas += `<tr class="res-dia"><td colspan="7"><i class="ti ti-calendar-event"></i> ${diaSemanaPT(diaAtual)} · ${formatDate(diaAtual)} · ${doDia} ${doDia === 1 ? 'reserva' : 'reservas'}</td></tr>`;
+      }
+      linhas += `
+            <tr>
+              <td><strong>${r.equipamento}</strong></td><td>${r.solicitante}</td>
+              <td>${r.sala}</td><td>${formatDate(r.dataInicio)}</td>
+              <td>${r.aulas&&r.aulas.length?`<span class="badge badge-reservado" style="font-size:11px">${getLabelAulas(r.aulas)}</span><br><span class="text-muted" style="font-size:11px">${r.horaInicio}–${r.horaFim}</span>`:r.horaInicio?`${r.horaInicio}–${r.horaFim}`:"—"}</td><td>${r.unidade||'Matriz'}</td>
+              <td><div style="display:flex;gap:4px">
+                <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar"><i class="ti ti-edit"></i></button>
+                <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('dashboard')" title="Fechar" style="color:var(--success)"><i class="ti ti-check"></i></button>
+              </div></td>
+            </tr>`;
+    }
+    return `<div class="card mb-20" style="border-left:4px solid var(--warning)">
+      <div class="card-header" style="background:var(--warning-bg)">
+        <span class="card-title"><i class="ti ti-calendar-event" style="color:var(--warning)"></i> Reservas Abertas (${abertas.length})</span>
+        <button class="btn btn-sm btn-ghost" onclick="navigateTo('reservas-ativas')">Ver todas</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%">
+          <thead><tr><th>Equipamento</th><th>Solicitante</th><th>Sala</th><th>Data</th><th>Horário</th><th>Unidade</th><th>Ações</th></tr></thead>
+          <tbody>${linhas}
+          </tbody>
+        </table>
+        ${abertas.length>5?`<div style="padding:10px 16px;text-align:center;border-top:1px solid var(--gray-100)"><button class="btn btn-ghost btn-sm" onclick="navigateTo('reservas-ativas')">Ver todas as ${abertas.length} reservas abertas</button></div>`:''}
+      </div>
+    </div>`;
+  })()}
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Status dos Chamados</span></div>
+      <div class="card-body"><div class="chart-container"><canvas id="chart-status"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-trending-up"></i> Tendência — Chamados vs Reservas</span></div>
+      <div class="card-body"><div class="chart-container"><canvas id="chart-tendencia"></canvas></div></div>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="card" style="display:none"><div class="card-body"></div></div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><i class="ti ti-headset"></i> Chamados Recentes</span>
+        <button class="btn btn-primary btn-sm" onclick="openModalChamado()"><i class="ti ti-plus"></i> Novo</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${STATE.chamados.filter(c=>c.status!=='fechado').slice(0,5).map(c=>`
+        <div class="today-item" style="padding:12px 16px">
+          <div class="today-item-icon" style="background:${c.prioridade==='Alta'?'var(--danger-bg)':'var(--warning-bg)'};color:${c.prioridade==='Alta'?'var(--danger)':'var(--warning)'}"><i class="ti ti-urgent"></i></div>
+          <div class="today-item-info">
+            <div class="today-item-title">${c.titulo}</div>
+            <div class="today-item-sub">${c.solicitante} · ${c.categoria} · ${c.unidade||'Matriz'}</div>
+          </div>
+          <span class="badge badge-${c.status}">${c.status}</span>
+        </div>`).join('') || '<div class="empty-state" style="padding:30px"><i class="ti ti-mood-happy"></i><h3>Sem chamados ativos</h3></div>'}
+      </div>
+    </div>
+  </div>`;
+}
+function renderChartStatus() {
+  const ctx=document.getElementById('chart-status'); if(!ctx) return;
+  new Chart(ctx, { type:'doughnut', data:{ labels:['Aberto','Em Andamento','Fechado','Suspenso'], datasets:[{ data:[STATE.chamados.filter(c=>c.status==='aberto').length, STATE.chamados.filter(c=>c.status==='andamento').length, STATE.chamados.filter(c=>c.status==='fechado').length, STATE.chamados.filter(c=>c.status==='suspenso').length], backgroundColor:['#e74c3c','#e67e22','#27ae60','#95a5a6'], borderWidth:0 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Nunito', size:12 } } } } } });
+}
+function renderChartTendencia() {
+  const ctx = document.getElementById('chart-tendencia'); if (!ctx) return;
+  const meses = [];
+  const chamadosPorMes = [];
+  const reservasPorMes = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const label = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const prefix = `${y}-${m}`;
+    meses.push(label);
+    chamadosPorMes.push(STATE.chamados.filter(c => c.criado?.startsWith(prefix)).length);
+    reservasPorMes.push(STATE.reservas.filter(r => r.dataInicio?.startsWith(prefix)).length);
+  }
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: meses,
+      datasets: [
+        { label: 'Chamados', data: chamadosPorMes, borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,.08)', tension: .4, fill: true, pointRadius: 4 },
+        { label: 'Reservas',  data: reservasPorMes,  borderColor: '#0073c8', backgroundColor: 'rgba(0,115,200,.08)', tension: .4, fill: true, pointRadius: 4 },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Nunito', size: 12 } } } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+  });
+}
+function renderChartCat() {
+  const ctx=document.getElementById('chart-cat'); if(!ctx) return;
+  const cats={};
+  STATE.chamados.forEach(c=>{ cats[c.categoria]=(cats[c.categoria]||0)+1; });
+  new Chart(ctx, { type:'bar', data:{ labels:Object.keys(cats), datasets:[{ label:'Chamados', data:Object.values(cats), backgroundColor:'#0073c8', borderRadius:6 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 } } } } });
+}
+// ===== CALENDÁRIO =====
+function calendario() {
+  const now = new Date();
+  return `
+  <div class="filter-bar">
+    <button class="btn btn-ghost" id="cal-prev"><i class="ti ti-chevron-left"></i></button>
+    <span id="cal-title" style="font-size:16px;font-weight:700;min-width:200px;text-align:center"></span>
+    <button class="btn btn-ghost" id="cal-next"><i class="ti ti-chevron-right"></i></button>
+    <span style="flex:1"></span>
+    <button class="btn btn-primary" onclick="openModalReserva()"><i class="ti ti-calendar-plus"></i> Nova Reserva</button>
+    <button class="btn btn-ghost" onclick="openModalChamado()"><i class="ti ti-headset"></i> Novo Chamado</button>
+  </div>
+  <div class="card">
+    <div id="cal-grid"></div>
+  </div>
+  <div class="card mt-16">
+    <div class="card-header"><span class="card-title"><i class="ti ti-list"></i> Reservas do Mês</span></div>
+    <div id="cal-list"></div>
+  </div>`;
+}
+function renderCalendario() {
+  if (!$('#cal-grid')) return;
+  let current = new Date();
+  function build() {
+    const y=current.getFullYear(), m=current.getMonth();
+    const title=$('#cal-title'); if(title) title.textContent=current.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^\w/,c=>c.toUpperCase());
+    const first=new Date(y,m,1).getDay();
+    const days=new Date(y,m+1,0).getDate();
+    const weeks=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    let html=`<div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--gray-200)">
+      ${weeks.map(w=>`<div style="padding:10px;text-align:center;font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase">${w}</div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr)">`;
+    for(let i=0;i<first;i++) html+=`<div class="cal-day empty"></div>`;
+    const todayStr=dateNow();
+    for(let d=1;d<=days;d++){
+      const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const dayRes=STATE.reservas.filter(r=>r.dataInicio===ds && r.status==='ativo');
+      const isToday=ds===todayStr;
+      html+=`<div class="cal-day ${isToday?'today':''}" style="min-height:80px;border-right:1px solid var(--gray-100);border-bottom:1px solid var(--gray-100);padding:6px;cursor:pointer" onclick="openModalReservaData('${ds}')">
+        <div style="font-size:13px;font-weight:${isToday?700:500};color:${isToday?'white':'var(--gray-700)'};background:${isToday?'var(--primary)':''};width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:4px">${d}</div>
+        ${dayRes.slice(0,2).map(r=>`<div class="cal-event" title="${r.equipamento} — ${r.solicitante}">${r.equipamento.split(' ')[0]}</div>`).join('')}
+        ${dayRes.length>2?`<div style="font-size:10px;color:var(--primary);font-weight:600">+${dayRes.length-2} mais</div>`:''}
+      </div>`;
+    }
+    html+='</div>';
+    $('#cal-grid').innerHTML=html;
+    const list=STATE.reservas.filter(r=>{ const rd=new Date(r.dataInicio); return rd.getFullYear()===y && rd.getMonth()===m && r.status==='ativo'; });
+    const calList=$('#cal-list');
+    if(calList) calList.innerHTML=list.length===0?'<div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva este mês</h3></div>':`<div class="table-wrapper"><table><thead><tr><th>Data</th><th>Equipamento</th><th>Solicitante</th><th>Sala</th><th>Horário</th><th>Status</th></tr></thead><tbody>${list.map(r=>`<tr><td>${formatDate(r.dataInicio)}</td><td>${r.equipamento}</td><td>${r.solicitante}</td><td>${r.sala}</td><td>${r.horaInicio}–${r.horaFim}</td><td><span class="badge badge-${r.status}">${r.status}</span></td></tr>`).join('')}</tbody></table></div>`;
+  }
+  build();
+  const prev=$('#cal-prev'), next=$('#cal-next');
+  if(prev) prev.addEventListener('click',()=>{ current=new Date(current.getFullYear(),current.getMonth()-1,1); build(); });
+  if(next) next.addEventListener('click',()=>{ current=new Date(current.getFullYear(),current.getMonth()+1,1); build(); });
+}
+function openModalReservaData(ds) { openModalReserva(null, ds); }
+// ===== RESERVAS =====
+const CARGOS=['Administrativo','Aluno','Assistente','Coordenador(a)','Diretor(a)','Estagiário(a)','Professor(a)'];
+const SALAS=['Grupo 1','Grupo 2','Grupo 3','Grupo 4','Grupo 5','1º Ano','2º Ano','3º Ano','4º Ano','5º Ano','6º Ano','7º Ano','8º Ano','9º Ano','1º Ano EM','2º Ano EM','3º Ano EM','Aula de Apoio','Reunião','Outro'];
+// ===== AULAS — horários padrão =====
+const AULAS = [
+  { id: 'a1', label: '1ª Aula', inicio: '07:00', fim: '07:50' },
+  { id: 'a2', label: '2ª Aula', inicio: '07:50', fim: '08:40' },
+  { id: 'a3', label: '3ª Aula', inicio: '08:40', fim: '09:30' },
+  { id: 'a4', label: '4ª Aula', inicio: '09:30', fim: '10:20' },
+];
+const HORAS=(()=>{const h=[];for(let i=6;i<24;i++)for(let m=0;m<60;m+=5)h.push(`${String(i).padStart(2,'0')}:${String(m).padStart(2,'0')}`);return h;})();
+function getFilteredReservas() {
+  const q=($('#search-reserva')?.value||'').toLowerCase();
+  const st=$('#filter-reserva-status')?.value||'';
+  return STATE.reservas.filter(r=>(!q||r.equipamento.toLowerCase().includes(q)||r.solicitante.toLowerCase().includes(q))&&(!st||r.status===st));
+}
+function reservas() {
+  return `
+  <div class="filter-bar">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar reserva..." id="search-reserva"/></div>
+    <select class="filter-select" id="filter-reserva-status">
+      <option value="">Todos os status</option>
+      <option value="ativo">Ativo</option><option value="suspenso">Suspenso</option><option value="fechado">Fechado</option><option value="cancelado">Cancelado</option>
+    </select>
+    <button class="btn btn-primary" onclick="openModalReserva()"><i class="ti ti-plus"></i> Nova Reserva</button>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-calendar-event"></i> Reservas (${STATE.reservas.length})</span></div>
+    <div class="table-wrapper"><table><thead><tr><th>Equipamento</th><th>Solicitante</th><th>Cargo</th><th>Sala</th><th>Data</th><th>Horário</th><th>Qtd</th><th>Unidade</th><th>Status</th><th>Ações</th></tr></thead>
+    <tbody id="reservas-tbody">${renderReservasRows(STATE.reservas)}</tbody></table></div>
+  </div>`;
+}
+function renderReservasRows(list) {
+  list = sortByDate(list);
+  if (!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva encontrada</h3></div></td></tr>`;
+  return list.map(r=>`
+  <tr>
+    <td><strong>${r.equipamento}</strong><br><span class="text-muted">${r.equipamentoTipo}</span></td>
+    <td>${r.solicitante}</td>
+    <td><span class="text-muted">${r.cargo}</span></td>
+    <td>${r.sala}</td>
+    <td>${formatDate(r.dataInicio)}</td>
+    <td>${r.aulas&&r.aulas.length?`<span class="badge badge-reservado" style="font-size:11px">${getLabelAulas(r.aulas)}</span><br><span class="text-muted" style="font-size:11px">${r.horaInicio}–${r.horaFim}</span>`:r.horaInicio?`${r.horaInicio}–${r.horaFim}`:"—"}</td>
+    <td><strong>${r.quantidade}</strong></td>
+    <td>${r.unidade||'Matriz'}</td>
+    <td><span class="badge badge-${r.status}">${r.status}</span></td>
+    <td>
+      <div class="actions-menu">
+        <button class="btn-icon" onclick="toggleMenu(this)"><i class="ti ti-dots-vertical"></i></button>
+        <div class="actions-dropdown" style="display:none">
+          <button onclick="editReserva(${r.id})"><i class="ti ti-edit"></i> Editar</button>
+          <button onclick="changeReservaStatus(${r.id},'ativo');renderPage(STATE.currentPage)"><i class="ti ti-refresh"></i> Reativar</button>
+          <button onclick="changeReservaStatus(${r.id},'suspenso');renderPage(STATE.currentPage)"><i class="ti ti-player-pause"></i> Suspender</button>
+          <button onclick="changeReservaStatus(${r.id},'fechado');renderPage(STATE.currentPage)"><i class="ti ti-circle-check"></i> Fechar</button>
+          <hr>
+          <button class="danger" onclick="deleteReserva(${r.id})"><i class="ti ti-trash"></i> Excluir</button>
+        </div>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+// ===== CHAMADOS =====
+function getFilteredChamados() {
+  // Lê dos elementos OU dos filtros salvos no STATE
+  const q    = ($('#search-chamado')?.value  ?? STATE.filtros.chamadoSearch ?? '').toLowerCase();
+  const st   = $('#filter-chamado-status')?.value ?? STATE.filtros.chamado   ?? '';
+  const prio = $('#filter-chamado-prio')?.value   ?? STATE.filtros.chamadoPrio ?? '';
+  return STATE.chamados.filter(c => {
+    // Sem filtro de status: esconde fechados/cancelados por padrão
+    if (!st && (c.status === 'fechado' || c.status === 'cancelado')) return false;
+    if (st   && c.status    !== st)   return false;
+    if (prio && c.prioridade !== prio) return false;
+    if (q    && !c.titulo.toLowerCase().includes(q) && !c.solicitante.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+function chamados() {
+  const ativos=STATE.chamados.filter(c=>c.status!=='fechado'&&c.status!=='cancelado');
+  return `
+  <div class="filter-bar no-print">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar..." id="search-chamado"/></div>
+    <select class="filter-select" id="filter-chamado-status"><option value="">Todos</option><option value="aberto">Aberto</option><option value="andamento">Em Andamento</option><option value="pendente">Pendente</option><option value="suspenso">Suspenso</option><option value="fechado">Fechado</option><option value="cancelado">Cancelado</option></select>
+    <select class="filter-select" id="filter-chamado-prio"><option value="">Prioridade</option><option value="Alta">Alta</option><option value="Media">Média</option><option value="Baixa">Baixa</option></select>
+    <button class="btn btn-primary" onclick="openModalChamado()"><i class="ti ti-plus"></i> Novo Chamado</button>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-headset"></i> Chamados Ativos (${ativos.length})</span></div>
+    <div class="table-wrapper"><table><thead><tr><th>#</th><th>Título</th><th>Categoria</th><th>Prioridade</th><th>Solicitante</th><th>Atribuído</th><th>Unidade</th><th>Status</th><th>Criado</th><th>Ações</th></tr></thead>
+    <tbody id="chamados-tbody">${renderChamadosRows(ativos)}</tbody></table></div>
+  </div>`;
+}
+function prioColor(p){ return p==='Alta'?'#e74c3c':p==='Media'?'#e67e22':'#27ae60'; }
+function renderChamadosRows(list) {
+  if (!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Nenhum chamado ativo</h3></div></td></tr>`;
+  return list.map(c=>`
+  <tr>
+    <td><strong style="color:var(--primary)">#${c.id}</strong></td>
+    <td><strong>${c.titulo}</strong><br><span class="text-muted">${c.descricao.slice(0,35)}...</span></td>
+    <td>${c.categoria}</td>
+    <td><span style="color:${prioColor(c.prioridade)};font-weight:700">${c.prioridade}</span></td>
+    <td>${c.solicitante}</td>
+    <td>${c.atribuido||'<span class="text-muted">—</span>'}</td>
+    <td>${c.unidade||'Matriz'}</td>
+    <td><span class="badge badge-${c.status}">${c.status}</span></td>
+    <td style="white-space:nowrap">${formatDate(c.criado)}${c.hora?`<br><span class="text-muted" style="font-size:10px">${c.hora}</span>`:''}</td>
+    <td>
+      <div class="actions-menu">
+        <button class="btn-icon" onclick="toggleMenu(this)"><i class="ti ti-dots-vertical"></i></button>
+        <div class="actions-dropdown" style="display:none">
+          <button onclick="openModalAcompanhamento(${c.id})"><i class="ti ti-message-circle"></i> Acompanhamentos</button>
+          <button onclick="editChamado(${c.id})"><i class="ti ti-edit"></i> Editar</button>
+          <button onclick="changeChamadoStatus(${c.id},'andamento');renderPage(STATE.currentPage)"><i class="ti ti-loader"></i> Em Andamento</button>
+          <button onclick="changeChamadoStatus(${c.id},'pendente');renderPage(STATE.currentPage)"><i class="ti ti-clock"></i> Pendente</button>
+          <button onclick="changeChamadoStatus(${c.id},'suspenso');renderPage(STATE.currentPage)"><i class="ti ti-player-pause"></i> Suspender</button>
+          <button onclick="changeChamadoStatus(${c.id},'fechado');renderPage(STATE.currentPage)"><i class="ti ti-circle-check"></i> Fechar</button>
+          <hr>
+          <button class="danger" onclick="deleteChamado(${c.id})"><i class="ti ti-trash"></i> Excluir</button>
+        </div>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+// ===== ARQUIVADOS =====
+function arquivados() {
+  return `
+  <div class="tabs">
+    <button class="tab active" data-arq="chamados">Chamados Encerrados</button>
+    <button class="tab" data-arq="reservas">Reservas Encerradas</button>
+  </div>
+  <div id="arq-content">${renderArqChamados()}</div>`;
+}
+function renderArqChamados() {
+  const list=STATE.chamados.filter(c=>c.status==='fechado'||c.status==='cancelado');
+  return `<div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-archive"></i> Chamados Arquivados (${list.length})</span></div>
+  <div class="table-wrapper"><table><thead><tr><th>#</th><th>Título</th><th>Categoria</th><th>Solicitante</th><th>Unidade</th><th>Status</th><th>Atualizado</th><th>Ações</th></tr></thead>
+  <tbody>${list.length===0?`<tr><td colspan="8"><div class="empty-state"><i class="ti ti-archive"></i><h3>Nenhum chamado arquivado</h3></div></td></tr>`:list.map(c=>`
+  <tr><td><strong style="color:var(--primary)">#${c.id}</strong></td><td><strong>${c.titulo}</strong></td><td>${c.categoria}</td><td>${c.solicitante}</td><td>${c.unidade||'Matriz'}</td><td><span class="badge badge-${c.status}">${c.status}</span></td><td>${formatDate(c.atualizado)}</td>
+  <td><div style="display:flex;gap:6px">
+    <button class="btn-icon" onclick="changeChamadoStatus(${c.id},'aberto');renderPage('arquivados')" title="Reabrir" style="color:var(--primary)"><i class="ti ti-refresh"></i></button>
+    <button class="btn-icon" onclick="editChamado(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
+    <button class="btn-icon" onclick="deleteChamado(${c.id});renderPage('arquivados')" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+  </div></td></tr>`).join('')}</tbody></table></div></div>`;
+}
+function renderArqReservas() {
+  const list=STATE.reservas.filter(r=>r.status==='fechado'||r.status==='cancelado');
+  return `<div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-calendar-off"></i> Reservas Arquivadas (${list.length})</span></div>
+  <div class="table-wrapper"><table><thead><tr><th>Equipamento</th><th>Solicitante</th><th>Sala</th><th>Unidade</th><th>Data</th><th>Status</th><th>Ações</th></tr></thead>
+  <tbody>${list.length===0?`<tr><td colspan="7"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva arquivada</h3></div></td></tr>`:list.map(r=>`
+  <tr><td><strong>${r.equipamento}</strong></td><td>${r.solicitante}</td><td>${r.sala}</td><td>${r.unidade||'Matriz'}</td><td>${formatDate(r.dataInicio)}</td><td><span class="badge badge-${r.status}">${r.status}</span></td>
+  <td><div style="display:flex;gap:6px">
+    <button class="btn-icon" onclick="changeReservaStatus(${r.id},'ativo');renderPage('arquivados')" title="Reativar" style="color:var(--success)"><i class="ti ti-refresh"></i></button>
+    <button class="btn-icon" onclick="deleteReserva(${r.id});renderPage('arquivados')" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+  </div></td></tr>`).join('')}</tbody></table></div></div>`;
+}
+// ===== INVENTÁRIO TI =====
+const INV_CATS=['Rede','Impressora','Computador','Notebook','Monitor','Servidor','Câmera','Telefone IP','No-break','Access Point','Outro'];
+function inventario() {
+  return `
+  <div class="filter-bar">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar item..." id="search-inv"/></div>
+    <select class="filter-select" id="filter-inv-cat"><option value="">Todas as categorias</option>${INV_CATS.map(c=>`<option>${c}</option>`).join('')}</select>
+    <select class="filter-select" id="filter-inv-uni"><option value="">Todas as unidades</option><option>Matriz</option><option>Ensino Médio</option></select>
+    <button class="btn btn-primary" onclick="openModalInventario()"><i class="ti ti-plus"></i> Novo Item</button>
+  </div>
+  <div class="stats-grid" style="margin-bottom:20px">
+    ${INV_CATS.filter(c=>STATE.inventario.some(i=>i.categoria===c)).map(c=>`
+    <div class="stat-card" style="padding:14px 16px">
+      <div class="stat-icon blue" style="width:36px;height:36px;font-size:16px"><i class="ti ti-${invIcon(c)}"></i></div>
+      <div class="stat-info"><div class="stat-number" style="font-size:20px">${STATE.inventario.filter(i=>i.categoria===c).length}</div><div class="stat-label">${c}</div></div>
+    </div>`).join('')}
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-server"></i> Inventário Completo (${STATE.inventario.length} itens)</span></div>
+    <div class="rel-table-wrap"><table class="table-compact"><thead><tr><th>Nome</th><th class="inv-hide-xs">Categoria</th><th class="inv-hide-sm">Marca / Modelo</th><th>Patrimônio</th><th class="inv-hide-sm">IP / Série</th><th class="inv-hide-sm inv-hide-md">Local</th><th class="inv-hide-xs">Unidade</th><th class="inv-hide-sm">Garantia</th><th>Status</th><th>Ações</th></tr></thead>
+    <tbody id="inv-tbody">${renderInvRows(STATE.inventario)}</tbody></table></div>
+  </div>`;
+}
+function invIcon(c){ const m={Rede:'network',Impressora:'printer',Computador:'desktop',Notebook:'device-laptop',Monitor:'device-desktop',Servidor:'server',Câmera:'camera',NoBreak:'plug','Access Point':'wifi',Telefone:'phone'}; return m[c]||'device-floppy'; }
+function renderInvRows(list) {
+  if(!list.length) return `<tr><td colspan="10"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item no inventário</h3></div></td></tr>`;
+  return list.map(i=>`
+  <tr>
+    <td class="col-item" title="${i.nome||''}"><strong style="font-size:12px">${i.nome}</strong>${i.obs?`<br><span class="text-muted" style="font-size:10px">${i.obs}</span>`:''}</td>
+    <td class="inv-hide-xs"><span class="badge badge-reservado" style="font-size:10px">${i.categoria}</span></td>
+    <td class="inv-hide-sm" style="font-size:12px">${i.marca||''} ${i.modelo||''}</td>
+    <td><code style="background:var(--gray-100);padding:2px 5px;border-radius:4px;font-size:10px;white-space:nowrap">${i.patrimonio}</code></td>
+    <td class="inv-hide-sm" style="font-size:10px;color:var(--gray-500)"><code style="display:block;white-space:nowrap">${i.ip||'—'}</code><span>${i.serie||'—'}</span></td>
+    <td class="inv-hide-sm inv-hide-md" style="font-size:11px">${i.local||'—'}</td>
+    <td class="inv-hide-xs" style="font-size:11px">${i.unidade}</td>
+    <td class="inv-hide-sm"><span style="font-size:11px;white-space:nowrap;color:${diasParaVencer(i.garantia)<90?'var(--warning)':'inherit'}">${formatDate(i.garantia)||'—'}</span></td>
+    <td><span class="badge badge-${i.status==='ativo'?'fechado':'suspenso'}" style="font-size:10px">${i.status}</span></td>
+    <td><div style="display:flex;gap:2px">
+      <button class="btn-icon" onclick="editInventario(${i.id})" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-icon" onclick="deleteInventario(${i.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+function attachInvFilter() {
+  const s=$('#search-inv'), fc=$('#filter-inv-cat'), fu=$('#filter-inv-uni');
+  function applyFilter(){
+    const q=(s?.value||'').toLowerCase(), c=fc?.value||'', u=fu?.value||'';
+    const f=STATE.inventario.filter(i=>(!q||i.nome.toLowerCase().includes(q)||i.marca.toLowerCase().includes(q))&&(!c||i.categoria===c)&&(!u||i.unidade===u));
+    const tb=$('#inv-tbody'); if(tb) tb.innerHTML=renderInvRows(f);
+  }
+  if(s) s.addEventListener('input',applyFilter);
+  if(fc) fc.addEventListener('change',applyFilter);
+  if(fu) fu.addEventListener('change',applyFilter);
+}
+// ===== LICENÇAS =====
+function diasParaVencer(d) {
+  if (!d || d==='9999-12-31') return 9999;
+  return Math.ceil((new Date(d)-new Date())/86400000);
+}
+function licencas() {
+  return `
+  <div class="filter-bar">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar licença..." id="search-lic"/></div>
+    <select class="filter-select" id="filter-lic-status"><option value="">Todos</option><option value="ativo">Ativo</option><option value="vencendo">A Vencer</option><option value="expirado">Expirado</option></select>
+    <button class="btn btn-primary" onclick="openModalLicenca()"><i class="ti ti-plus"></i> Nova Licença</button>
+  </div>
+  <div class="stats-grid" style="margin-bottom:20px">
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-license"></i></div><div class="stat-info"><div class="stat-number">${STATE.licencas.filter(l=>l.status==='ativo').length}</div><div class="stat-label">Licenças Ativas</div></div></div>
+    <div class="stat-card" style="${STATE.licencas.filter(l=>diasParaVencer(l.vencimento)<=30).length>0?'border-color:var(--warning)':''}">
+      <div class="stat-icon orange"><i class="ti ti-alert-triangle"></i></div>
+      <div class="stat-info"><div class="stat-number">${STATE.licencas.filter(l=>diasParaVencer(l.vencimento)<=30&&diasParaVencer(l.vencimento)>0).length}</div><div class="stat-label">Vencem em 30 dias</div></div>
+    </div>
+    <div class="stat-card"><div class="stat-icon red"><i class="ti ti-ban"></i></div><div class="stat-info"><div class="stat-number">${STATE.licencas.filter(l=>l.status==='expirado').length}</div><div class="stat-label">Expiradas</div></div></div>
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-coin"></i></div><div class="stat-info"><div class="stat-number">R$ ${STATE.licencas.reduce((a,l)=>a+l.valor,0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="stat-label">Investimento Total</div></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças de Software (${STATE.licencas.length})</span></div>
+    <div class="table-wrapper"><table><thead><tr><th>Software</th><th>Fornecedor</th><th>Tipo</th><th>Qtd</th><th>Unidade</th><th>Compra</th><th>Vencimento</th><th>Dias Restantes</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead>
+    <tbody id="lic-tbody">${renderLicRows(STATE.licencas)}</tbody></table></div>
+  </div>`;
+}
+function renderLicRows(list) {
+  if(!list.length) return `<tr><td colspan="11"><div class="empty-state"><i class="ti ti-license-off"></i><h3>Nenhuma licença cadastrada</h3></div></td></tr>`;
+  return list.map(l=>{
+    const dias=diasParaVencer(l.vencimento);
+    const alertColor=dias<=30?'var(--danger)':dias<=90?'var(--warning)':'var(--success)';
+    const diasLabel=dias>=9999?'Perpétua':`${dias} dias`;
+    return `<tr>
+      <td><strong>${l.nome}</strong>${l.obs?`<br><span class="text-muted">${l.obs}</span>`:''}</td>
+      <td>${l.fornecedor}</td>
+      <td><span class="badge badge-reservado">${l.tipo}</span></td>
+      <td><strong>${l.quantidade}</strong></td>
+      <td>${l.unidade}</td>
+      <td>${formatDate(l.dataCompra)}</td>
+      <td><strong style="color:${alertColor}">${formatDate(l.vencimento)}</strong></td>
+      <td><span style="color:${alertColor};font-weight:700">${diasLabel}</span></td>
+      <td>R$ ${l.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+      <td><span class="badge badge-${l.status==='ativo'?'fechado':l.status==='vencendo'?'andamento':'suspenso'}">${l.status}</span></td>
+      <td>
+        <div style="display:flex;gap:4px">
+          <button class="btn-icon" onclick="editLicenca(${l.id})" title="Editar"><i class="ti ti-edit"></i></button>
+          <button class="btn-icon" onclick="deleteLicenca(${l.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+// ===== UNIDADES =====
+function matriz() { return renderUnidadePage('Matriz'); }
+function ensinomedio() { return renderUnidadePage('Ensino Médio'); }
+function renderUnidadePage(unidade) {
+  const equips=STATE.equipamentos.filter(e=>e.unidade===unidade);
+  const reservas=STATE.reservas.filter(r=>(r.unidade||'Matriz')===unidade&&r.status==='ativo');
+  const chamados=STATE.chamados.filter(c=>(c.unidade||'Matriz')===unidade&&c.status!=='fechado');
+  const icon=unidade==='Matriz'?'ti-building-school':'ti-building';
+  return `
+  <div class="stats-grid" style="margin-bottom:20px">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-devices"></i></div><div class="stat-info"><div class="stat-number">${equips.length}</div><div class="stat-label">Equipamentos</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-calendar-event"></i></div><div class="stat-info"><div class="stat-number">${reservas.length}</div><div class="stat-label">Reservas Ativas</div></div></div>
+    <div class="stat-card"><div class="stat-icon red"><i class="ti ti-headset"></i></div><div class="stat-info"><div class="stat-number">${chamados.length}</div><div class="stat-label">Chamados Abertos</div></div></div>
+    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-server"></i></div><div class="stat-info"><div class="stat-number">${STATE.inventario.filter(i=>i.unidade===unidade).length}</div><div class="stat-label">Itens Inventário</div></div></div>
+  </div>
+  <div class="filter-bar">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar equipamento..." id="search-unid"/></div>
+    <select class="filter-select" id="filter-unid-tipo"><option value="">Todos os tipos</option><option>Apresentador</option><option>Caixa de Som</option><option>Controle Projetor</option><option>Câmera</option><option>Filmadora</option><option>Impressora</option><option>Microfone</option><option>Monitor</option><option>Mouse</option><option>Notebook</option><option>Projetor</option><option>Rádio Comunicador Motorola</option><option>Tablet</option><option>Teclado</option><option>WebCam</option><option>iPad</option><option>Roteador</option><option>Switch</option><option>Outro</option></select>
+    <button class="btn btn-primary" onclick="openModalEquipamento('${unidade}')"><i class="ti ti-plus"></i> Novo Equipamento</button>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="${icon}"></i> ${unidade} — Equipamentos (${equips.length})</span></div>
+    <div class="table-wrapper"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Patrimônio</th><th>Local</th><th>Descrição</th><th>Status</th><th>Ações</th></tr></thead>
+    <tbody id="unid-tbody">${renderUnidadeEquips(equips)}</tbody></table></div>
+  </div>`;
+}
+function renderUnidadeEquips(list) {
+  if(!list.length) return `<tr><td colspan="7"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento cadastrado</h3></div></td></tr>`;
+  return list.map(e=>`<tr>
+    <td><strong>${e.nome}</strong></td><td>${e.tipo}</td>
+    <td><code style="background:var(--gray-100);padding:2px 6px;border-radius:4px;font-size:12px">${e.patrimonio}</code></td>
+    <td>${e.local||'—'}</td><td><span class="text-muted">${e.descricao}</span></td>
+    <td>${equipStatus(e.status)}</td>
+    <td><div style="display:flex;gap:4px">
+      <button class="btn-icon" onclick="editEquipamento(${e.id})" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-icon" onclick="abrirQRCode('${e.patrimonio}','${e.nome}')" title="QR Code" style="color:var(--primary)"><i class="ti ti-qrcode"></i></button>
+      <button class="btn-icon" onclick="deleteEquipamento(${e.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+function attachUnidadeFilter(unidade) {
+  const s=$('#search-unid'), ft=$('#filter-unid-tipo');
+  function applyFilter(){
+    const q=(s?.value||'').toLowerCase(), t=ft?.value||'';
+    const f=STATE.equipamentos.filter(e=>e.unidade===unidade&&(!q||e.nome.toLowerCase().includes(q))&&(!t||e.tipo===t));
+    const tb=$('#unid-tbody'); if(tb) tb.innerHTML=renderUnidadeEquips(f);
+  }
+  if(s) s.addEventListener('input',applyFilter);
+  if(ft) ft.addEventListener('change',applyFilter);
+}
+// ===== EQUIPAMENTOS (admin geral) =====
+function equipamentos() {
+  return `
+  <div class="filter-bar">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar..." id="search-equip"/></div>
+    <select class="filter-select" id="filter-equip-tipo"><option value="">Todos os tipos</option><option>Apresentador</option><option>Caixa de Som</option><option>Controle Projetor</option><option>Câmera</option><option>Filmadora</option><option>Impressora</option><option>Microfone</option><option>Monitor</option><option>Mouse</option><option>Notebook</option><option>Projetor</option><option>Rádio Comunicador Motorola</option><option>Tablet</option><option>Teclado</option><option>WebCam</option><option>iPad</option><option>Roteador</option><option>Switch</option><option>Outro</option></select>
+    <select class="filter-select" id="filter-equip-uni"><option value="">Todas as unidades</option><option>Matriz</option><option>Ensino Médio</option></select>
+    <button class="btn btn-primary" onclick="openModalEquipamento()"><i class="ti ti-plus"></i> Novo</button>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-devices"></i> Todos os Equipamentos (${STATE.equipamentos.length})</span></div>
+    <div class="table-wrapper"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Patrimônio</th><th>Marca/Modelo</th><th>Local</th><th>Unidade</th><th>Qtd</th><th>Status</th><th>Ações</th></tr></thead>
+    <tbody id="equip-tbody">${renderEquipRows(STATE.equipamentos)}</tbody></table></div>
+  </div>`;
+}
+function equipStatus(s){ const m={disponivel:'badge-fechado',reservado:'badge-reservado',manutencao:'badge-andamento',inativo:'badge-suspenso'}; const l={disponivel:'Disponível',reservado:'Reservado',manutencao:'Manutenção',inativo:'Inativo'}; return `<span class="badge ${m[s]||'badge-cancelado'}">${l[s]||s}</span>`; }
+function renderEquipRows(list) {
+  if(!list.length) return `<tr><td colspan="9"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>`;
+  return list.map(e=>`<tr>
+    <td><strong>${e.nome}</strong></td><td>${e.tipo}</td>
+    <td><code style="background:var(--gray-100);padding:2px 6px;border-radius:4px;font-size:12px">${e.patrimonio}</code></td>
+    <td>${e.marca||'—'} ${e.modelo||''}</td><td>${e.local||'—'}</td><td>${e.unidade}</td>
+    <td><strong>${e.quantidade||1}</strong></td>
+    <td>${equipStatus(e.status)}</td>
+    <td><div style="display:flex;gap:4px">
+      <button class="btn-icon" onclick="editEquipamento(${e.id})" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-icon" onclick="deleteEquipamento(${e.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+function attachEquipFilter() {
+  const s=$('#search-equip'), ft=$('#filter-equip-tipo'), fu=$('#filter-equip-uni');
+  function applyFilter(){
+    const q=(s?.value||'').toLowerCase(), t=ft?.value||'', u=fu?.value||'';
+    const f=STATE.equipamentos.filter(e=>(!q||e.nome.toLowerCase().includes(q))&&(!t||e.tipo===t)&&(!u||e.unidade===u));
+    const tb=$('#equip-tbody'); if(tb) tb.innerHTML=renderEquipRows(f);
+  }
+  if(s) s.addEventListener('input',applyFilter);
+  if(ft) ft.addEventListener('change',applyFilter);
+  if(fu) fu.addEventListener('change',applyFilter);
+}
+// ===== USUÁRIOS =====
+function usuarios() {
+  return `
+  <div class="filter-bar">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar usuário..." id="search-user"/></div>
+    <select class="filter-select" id="filter-user-status"><option value="">Todos</option><option value="ativo">Ativo</option><option value="suspenso">Suspenso</option></select>
+    <button class="btn btn-primary" onclick="openModalUsuario()"><i class="ti ti-user-plus"></i> Novo Usuário</button>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-users"></i> Usuários (${STATE.users.length})</span></div>
+    <div class="table-wrapper"><table><thead><tr><th>Usuário</th><th>E-mail</th><th>Login</th><th>Unidade</th><th>Perfil</th><th>Status</th><th>Cadastro</th><th>Ações</th></tr></thead>
+    <tbody id="users-tbody">${renderUserRows(STATE.users)}</tbody></table></div>
+  </div>`;
+}
+function renderUserRows(list) {
+  const q=($('#search-user')?.value||'').toLowerCase();
+  const st=$('#filter-user-status')?.value||'';
+  const filtered=list.filter(u=>(!q||(u.nome||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q)||(u.usuario||'').toLowerCase().includes(q))&&(!st||u.status===st));
+  if(!filtered.length) return `<tr><td colspan="8"><div class="empty-state"><i class="ti ti-users-off"></i><h3>Nenhum usuário encontrado</h3></div></td></tr>`;
+  return filtered.map(u=>`<tr>
+    <td><div style="display:flex;align-items:center;gap:10px"><div class="user-avatar-lg" style="background:${u.role==='admin'?'var(--primary)':'#7b1fa2'}">${initials(u.nome)}</div><div><div style="font-weight:700">${u.nome}</div></div></div></td>
+    <td>${u.email}</td>
+    <td><code style="background:var(--gray-100);padding:2px 6px;border-radius:4px;font-size:12px">${u.usuario}</code></td>
+    <td>${u.unidade||'—'}</td>
+    <td><span class="badge" style="background:${u.role==='admin'?'#dbeafe':'#ede9fe'};color:${u.role==='admin'?'#1d4ed8':'#5b21b6'}">${u.role==='admin'?'Admin':'Usuário'}</span></td>
+    <td><span class="badge ${u.status==='ativo'?'badge-fechado':'badge-suspenso'}">${u.status}</span></td>
+    <td>${formatDate(u.criado)}</td>
+    <td><div style="display:flex;gap:4px">
+      <button class="btn-icon" onclick="editUsuario(${u.id})" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-icon" onclick="toggleUserStatus(${u.id})" title="${u.status==='ativo'?'Suspender':'Ativar'}" style="color:${u.status==='ativo'?'var(--warning)':'var(--success)'}"><i class="ti ti-${u.status==='ativo'?'ban':'refresh'}"></i></button>
+      <button class="btn-icon" onclick="deleteUsuario(${u.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+// ===== PÁGINAS DE USUÁRIO NORMAL =====
+function reservasAtivasPage() {
+  const list = STATE.reservas.filter(r=>r.status==='ativo');
+  return `
+  <div class="filter-bar no-print">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar..." id="search-res-ativas" oninput="filtrarResAtivas(this.value)"/></div>
+    <select class="filter-select" id="filter-res-ativas-uni" onchange="filtrarResAtivas()">
+      <option value="">Todas as unidades</option><option value="Matriz">Matriz</option><option value="Ensino Médio">Ensino Médio</option>
+    </select>
+    <button class="btn btn-primary" onclick="openModalReserva()"><i class="ti ti-plus"></i> Nova Reserva</button>
+  </div>
+  <div class="card">
+    <div class="card-header" style="background:var(--warning-bg);border-bottom-color:var(--gray-200)">
+      <span class="card-title" style="color:var(--warning)"><i class="ti ti-calendar-event"></i> Reservas Abertas — ${list.length} no total</span>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Nº Reserva</th><th>Equipamento</th><th>Solicitante / Cargo</th><th>Sala</th><th>Data / Horário</th><th>Qtd</th><th>Unidade</th><th>Ações</th></tr></thead>
+        <tbody id="tbody-res-ativas">
+          ${renderResAtivas(list)}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+function diaSemanaPT(dataISO) {
+  const d = new Date((dataISO||'') + 'T12:00:00');
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('pt-BR', { weekday: 'long' }).toUpperCase();
+}
+function renderResAtivas(list) {
+  list = sortByDate(list);
+  if(!list.length) return `<tr><td colspan="8"><div class="empty-state"><i class="ti ti-calendar-check"></i><h3>Nenhuma reserva aberta</h3><p>Todas as reservas foram fechadas!</p></div></td></tr>`;
+  let html = '', diaAtual = null;
+  for (const r of list) {
+    if (r.dataInicio !== diaAtual) {
+      diaAtual = r.dataInicio;
+      const doDia = list.filter(x => x.dataInicio === diaAtual).length;
+      html += `<tr class="res-dia"><td colspan="8"><i class="ti ti-calendar-event"></i> ${diaSemanaPT(diaAtual)} · ${formatDate(diaAtual)} · ${doDia} ${doDia === 1 ? 'reserva' : 'reservas'}</td></tr>`;
+    }
+    html += resAtivaRow(r);
+  }
+  return html;
+}
+function resAtivaRow(r) {
+  return `
+  <tr>
+    <td><strong style="color:var(--primary)">#${r.id}</strong></td>
+    <td><strong>${r.equipamento}</strong><br><span class="text-muted" style="font-size:11px">${r.equipamentoTipo}</span></td>
+    <td>${r.solicitante}<br><span class="text-muted" style="font-size:11px">${r.cargo}</span></td>
+    <td><strong>${r.sala}</strong></td>
+    <td><strong>${formatDate(r.dataInicio)}</strong><br><span class="text-muted" style="font-size:11px">${r.aulas&&r.aulas.length?getLabelAulas(r.aulas):r.horaInicio?`${r.horaInicio}–${r.horaFim}`:"—"}</span></td>
+    <td style="text-align:center"><strong>${r.quantidade}</strong></td>
+    <td>${r.unidade||'Matriz'}</td>
+    <td>
+      <div style="display:flex;gap:4px">
+        <button class="btn-icon" onclick="editReserva(${r.id})" title="Editar" style="color:var(--primary)"><i class="ti ti-edit"></i></button>
+        <button class="btn-icon" onclick="changeReservaStatus(${r.id},'fechado');renderPage('reservas-ativas')" title="Fechar" style="color:var(--success)"><i class="ti ti-circle-check"></i></button>
+        <button class="btn-icon" onclick="changeReservaStatus(${r.id},'suspenso');renderPage('reservas-ativas')" title="Suspender" style="color:var(--warning)"><i class="ti ti-player-pause"></i></button>
+        <button class="btn-icon" onclick="deleteReserva(${r.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+      </div>
+    </td>
+  </tr>`;
+}
+function filtrarResAtivas(q) {
+  const search=(typeof q==='string'?q:($('#search-res-ativas')?.value||'')).toLowerCase();
+  const uni=$('#filter-res-ativas-uni')?.value||'';
+  const list=sortByDate(STATE.reservas.filter(r=>r.status==='ativo'&&(!search||r.equipamento.toLowerCase().includes(search)||r.solicitante.toLowerCase().includes(search)||r.sala.toLowerCase().includes(search))&&(!uni||(r.unidade||'Matriz')===uni)));
+  const tb=$('#tbody-res-ativas'); if(tb) tb.innerHTML=renderResAtivas(list);
+}
+function novaReserva() { setTimeout(()=>openModalReserva(),100); return `<div class="empty-state" style="padding:80px"><i class="ti ti-calendar-plus" style="font-size:56px;color:var(--primary)"></i><h3>Abrindo formulário de reserva...</h3></div>`; }
+function novoChamado() { setTimeout(()=>openModalChamado(),100); return `<div class="empty-state" style="padding:80px"><i class="ti ti-headset" style="font-size:56px;color:var(--primary)"></i><h3>Abrindo formulário de chamado...</h3></div>`; }
+function meuschamados() {
+  const u=STATE.currentUser;
+  const meus=STATE.chamados.filter(c=>c.solicitante===u.nome);
+  return `<div class="card">
+    <div class="card-header"><span class="card-title"><i class="ti ti-list-check"></i> Meus Chamados (${meus.length})</span>
+    <button class="btn btn-primary btn-sm" onclick="openModalChamado()"><i class="ti ti-plus"></i> Novo</button></div>
+    <div class="table-wrapper"><table><thead><tr><th>#</th><th>Título</th><th>Categoria</th><th>Prioridade</th><th>Status</th><th>Criado</th><th>Atualizado</th></tr></thead>
+    <tbody>${meus.length===0?`<tr><td colspan="7"><div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Você não tem chamados</h3></div></td></tr>`:meus.map(c=>`
+    <tr><td><strong style="color:var(--primary)">#${c.id}</strong></td><td><strong>${c.titulo}</strong><br><span class="text-muted">${c.descricao.slice(0,40)}...</span></td><td>${c.categoria}</td><td><span style="color:${prioColor(c.prioridade)};font-weight:700">${c.prioridade}</span></td><td><span class="badge badge-${c.status}">${c.status}</span></td><td>${formatDate(c.criado)}</td><td>${formatDate(c.atualizado)}</td></tr>`).join('')}</tbody></table></div>
+  </div>`;
+}
+// ===== RELATÓRIOS =====
+function relatorios() {
+  const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  return `
+  <!-- BARRA DE CONTROLE -->
+  <div class="rel-toolbar no-print">
+    <!-- MODO -->
+    <div class="rel-mode-switch">
+      <button class="rel-mode-btn active" id="btn-modo-graficos" onclick="setRelMode('graficos')">
+        <i class="ti ti-chart-bar"></i> Gráficos
+      </button>
+      <button class="rel-mode-btn" id="btn-modo-dados" onclick="setRelMode('dados')">
+        <i class="ti ti-table"></i> Dados
+      </button>
+    </div>
+    <!-- TIPO (só aparece no modo dados) -->
+    <div id="rel-tipo-wrap" style="display:none;align-items:center;gap:8px">
+      <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Relatório:</label>
+      <select class="filter-select" id="rel-tipo" onchange="switchRelatorio(this.value)" style="font-weight:700;color:var(--primary)">
+        <option value="geral">Geral (Chamados + Reservas)</option>
+        <option value="chamados">Chamados</option>
+        <option value="reservas">Reservas</option>
+        <option value="inventario">Inventário TI</option>
+        <option value="licencas">Licenças</option>
+        <option value="equipamentos">Equipamentos</option>
+      </select>
+    </div>
+    <!-- FILTROS COMUNS -->
+    <select class="filter-select" id="rel-uni">
+      <option value="">Todas as unidades</option>
+      <option value="Matriz">Matriz</option>
+      <option value="Ensino Médio">Ensino Médio</option>
+    </select>
+    <select class="filter-select" id="rel-status-f">
+      <option value="">Todos os status</option>
+      <option value="aberto">Aberto</option>
+      <option value="andamento">Em Andamento</option>
+      <option value="pendente">Pendente</option>
+      <option value="fechado">Fechado</option>
+      <option value="ativo">Ativo</option>
+      <option value="suspenso">Suspenso</option>
+    </select>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:12px;color:var(--gray-500)">De</span>
+      <input type="date" class="filter-select" id="rel-de" style="width:140px"/>
+      <span style="font-size:12px;color:var(--gray-500)">até</span>
+      <input type="date" class="filter-select" id="rel-ate" value="${dateNow()}" style="width:140px"/>
+    </div>
+    <button class="btn btn-primary" onclick="gerarRelatorio()"><i class="ti ti-refresh"></i> Atualizar</button>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="imprimirRelatorio()"><i class="ti ti-printer"></i> Imprimir / PDF</button>
+    <div style="position:relative" id="export-wrap">
+      <button class="btn btn-ghost" onclick="toggleExportMenu()"><i class="ti ti-download"></i> Exportar Excel</button>
+      <div id="export-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:white;border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);z-index:200;min-width:180px;overflow:hidden">
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700);font-weight:700" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarGeral();document.getElementById('export-menu').style.display='none'"><i class="ti ti-layout-list"></i> Geral (Tudo)</button><button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarReservas();document.getElementById('export-menu').style.display='none'"><i class="ti ti-calendar-event"></i> Reservas</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarChamados();document.getElementById('export-menu').style.display='none'"><i class="ti ti-headset"></i> Chamados</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarInventario();document.getElementById('export-menu').style.display='none'"><i class="ti ti-server"></i> Inventário</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarLicencas();document.getElementById('export-menu').style.display='none'"><i class="ti ti-license"></i> Licenças</button>
+        <button style="width:100%;padding:9px 14px;border:none;background:transparent;font-family:var(--font);font-size:13px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--gray-700)" onmouseenter="this.style.background='var(--gray-50)'" onmouseleave="this.style.background='transparent'" onclick="exportarEquipamentos();document.getElementById('export-menu').style.display='none'"><i class="ti ti-devices"></i> Equipamentos</button>
+      </div>
+    </div>
+    </div>
+  </div>
+  <!-- ÁREA DO RELATÓRIO -->
+  <div id="rel-content">
+    ${renderRelGraficos()}
+  </div>`;
+}
+// ============================================================
+// MODO: GRÁFICOS
+// ============================================================
+function renderRelGraficos() {
+  const now = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const totalCh = STATE.chamados.length;
+  const totalRes = STATE.reservas.length;
+  const totalInv = STATE.inventario.length;
+  const totalLic = STATE.licencas.length;
+  const totalEq = STATE.equipamentos.length;
+  const totalUsers = STATE.users.filter(u=>u.status==='ativo').length;
+  const licVencendo = STATE.licencas.filter(l=>diasParaVencer(l.vencimento)<=30&&diasParaVencer(l.vencimento)>0).length;
+  const chAbertos = STATE.chamados.filter(c=>c.status==='aberto').length;
+  const chFechados = STATE.chamados.filter(c=>c.status==='fechado').length;
+  return `
+  <!-- CABEÇALHO INSTITUCIONAL -->
+  <div class="rel-print-header">
+    <div class="rel-print-logo">
+      <img src="logo.png" alt="Escola Miró" style="height:60px;object-fit:contain" onerror="this.style.display='none'">
+    </div>
+    <div class="rel-print-info">
+      <h1>TI — Escola Miró</h1>
+      <h2>Relatório Executivo — Visão Geral</h2>
+      <p>Responsável TI: <strong>Tiago Souza</strong> &nbsp;|&nbsp; Emitido em: <strong>${now}, ${hora}</strong></p>
+    </div>
+  </div>
+  <!-- KPIs GERAIS -->
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${totalCh}</div><div class="rel-kpi-label">Total de Chamados</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${chFechados}</div><div class="rel-kpi-label">Chamados Fechados</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${chAbertos}</div><div class="rel-kpi-label">Chamados Abertos</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${totalRes}</div><div class="rel-kpi-label">Total de Reservas</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">${totalEq}</div><div class="rel-kpi-label">Equipamentos</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${totalInv}</div><div class="rel-kpi-label">Itens no Inventário</div></div>
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${totalLic}</div><div class="rel-kpi-label">Licenças de Software</div></div>
+    <div class="rel-kpi ${licVencendo>0?'red':'green'}"><div class="rel-kpi-num">${licVencendo}</div><div class="rel-kpi-label">Licenças a Vencer</div></div>
+  </div>
+  <!-- GRÁFICOS LINHA 1 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-line"></i> Chamados por Mês (Ano Atual)</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-mensal"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Status dos Chamados</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-status-rel"></canvas></div></div>
+    </div>
+  </div>
+  <!-- GRÁFICOS LINHA 2 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-pie"></i> Chamados por Prioridade</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-prio"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Chamados por Categoria</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-cat-rel"></canvas></div></div>
+    </div>
+  </div>
+  <!-- GRÁFICOS LINHA 3 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Reservas por Tipo de Equipamento</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-equip-uso"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-user-check"></i> Chamados por Usuário</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-user"></canvas></div></div>
+    </div>
+  </div>
+  <!-- GRÁFICOS LINHA 4 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-donut"></i> Distribuição por Unidade</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-unidade"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças — Dias Restantes</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-lic"></canvas></div></div>
+    </div>
+  </div>
+  <!-- GRÁFICOS LINHA 5 -->
+  <div class="grid-2 mb-20">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Equipamentos por Status</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-equip-status"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-chart-line"></i> Reservas por Mês</span></div>
+      <div class="card-body"><div class="chart-container" style="height:220px"><canvas id="chart-res-mensal"></canvas></div></div>
+    </div>
+  </div>
+  <!-- RODAPÉ DE IMPRESSÃO -->
+  <div class="rel-print-footer">
+    <p>TI - Escola Miró &nbsp;|&nbsp; Responsável: Tiago Souza &nbsp;|&nbsp; Gerado em: ${now}, ${hora}</p>
+    <p>Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.</p>
+  </div>`;
+}
+// ============================================================
+// MODO: DADOS
+// ============================================================
+function renderRelDados(tipo) {
+  tipo = tipo || document.getElementById('rel-tipo')?.value || 'chamados';
+  const map = { geral: renderRelGeral2, chamados: renderRelChamados, reservas: renderRelReservas, inventario: renderRelInventario, licencas: renderRelLicencas, equipamentos: renderRelEquipamentos };
+  return map[tipo] ? map[tipo]() : '';
+}
+function setRelMode(modo) {
+  document.getElementById('btn-modo-graficos')?.classList.toggle('active', modo==='graficos');
+  document.getElementById('btn-modo-dados')?.classList.toggle('active', modo==='dados');
+  const tipoWrap = document.getElementById('rel-tipo-wrap');
+  if (tipoWrap) tipoWrap.style.display = modo==='dados' ? 'flex' : 'none';
+  const el = document.getElementById('rel-content');
+  if (!el) return;
+  if (modo === 'graficos') {
+    el.innerHTML = renderRelGraficos();
+    setTimeout(renderRelatorioCharts, 100);
+  } else {
+    const tipo = document.getElementById('rel-tipo')?.value || 'chamados';
+    el.innerHTML = renderRelDados(tipo);
+  }
+}
+function switchRelatorio(tipo) {
+  const el = document.getElementById('rel-content');
+  if (el) el.innerHTML = renderRelDados(tipo);
+}
+function gerarRelatorio() {
+  const modoGraf = document.getElementById('btn-modo-graficos')?.classList.contains('active');
+  const el = document.getElementById('rel-content');
+  if (!el) return;
+  if (modoGraf) {
+    el.innerHTML = renderRelGraficos();
+    setTimeout(renderRelatorioCharts, 100);
+  } else {
+    const tipo = document.getElementById('rel-tipo')?.value || 'chamados';
+    el.innerHTML = renderRelDados(tipo);
+  }
+  toast('Relatório atualizado!', 'success');
+}
+function getRelFiltros() {
+  return {
+    uni: document.getElementById('rel-uni')?.value || '',
+    st:  document.getElementById('rel-status-f')?.value || '',
+    de:  document.getElementById('rel-de')?.value || '',
+    ate: document.getElementById('rel-ate')?.value || '',
+  };
+}
+function filterByDate(list, campo, de, ate) {
+  return list.filter(item => {
+    const d = item[campo] || '';
+    if (de && d < de) return false;
+    if (ate && d > ate) return false;
+    return true;
+  });
+}
+// ============================================================
+// HELPER: cabeçalho de impressão por tipo
+// ============================================================
+function relPrintHeader(titulo) {
+  const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  return `
+  <div class="rel-print-header">
+    <div class="rel-print-logo">
+      <img src="logo.png" alt="Escola Miró" style="height:55px;object-fit:contain" onerror="this.style.display='none'">
+    </div>
+    <div class="rel-print-info">
+      <h1>TI — Escola Miró</h1>
+      <h2>${titulo}</h2>
+      <p>Responsável TI: <strong>Tiago Souza</strong> &nbsp;|&nbsp; Emitido em: <strong>${now} às ${hora}</strong></p>
+    </div>
+  </div>`;
+}
+function relPrintFooter() {
+  const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  return `<div class="rel-print-footer"><p>TI - Escola Miró &nbsp;|&nbsp; Responsável: Tiago Souza &nbsp;|&nbsp; ${now} às ${hora}</p><p>Copyright &copy; 2026 Tiago Souza. Todos os direitos reservados.</p></div>`;
+}
+// ============================================================
+// RELATÓRIO: CHAMADOS
+// ============================================================
+// ============================================================
+// RELATÓRIO GERAL (dados): Chamados + Reservas combinados
+// ============================================================
+function renderRelGeral2() {
+  const f = getRelFiltros();
+  let chamados = STATE.chamados;
+  let reservas = sortByDate(STATE.reservas);
+  if (f.uni) { chamados = chamados.filter(c=>(c.unidade||'Matriz')===f.uni); reservas = reservas.filter(r=>(r.unidade||'Matriz')===f.uni); }
+  if (f.de)  { chamados = chamados.filter(c=>c.criado>=f.de); reservas = reservas.filter(r=>r.dataInicio>=f.de); }
+  if (f.ate) { chamados = chamados.filter(c=>c.criado<=f.ate); reservas = reservas.filter(r=>r.dataInicio<=f.ate); }
+  const now = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  return `
+  ${relPrintHeader('Relatório Geral — Chamados & Reservas')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
+    ${f.de||f.ate?`<span class="rel-filter-tag">${f.de?formatDate(f.de):''} ${f.ate?'até '+formatDate(f.ate):''}</span>`:''}
+  </div>
+  <div class="rel-kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${chamados.length}</div><div class="rel-kpi-label">Total Chamados</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${chamados.filter(c=>c.status==='aberto').length}</div><div class="rel-kpi-label">Chamados Abertos</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${reservas.length}</div><div class="rel-kpi-label">Total Reservas</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${reservas.filter(r=>r.status==='ativo').length}</div><div class="rel-kpi-label">Reservas Ativas</div></div>
+  </div>
+  <!-- CHAMADOS -->
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white"><i class="ti ti-headset"></i> Chamados (${chamados.length})</span>
+    </div>
+    <div class="rel-table-wrap">
+      <table class="rel-table">
+        <thead><tr>
+          <th style="width:45px">#</th><th>Título</th><th>Categoria</th>
+          <th>Prioridade</th><th>Solicitante</th><th>Unidade</th>
+          <th>Status</th><th>Aberto em</th>
+        </tr></thead>
+        <tbody>
+          ${chamados.length===0?'<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--gray-400)">Nenhum chamado</td></tr>':
+            chamados.map((c,i)=>`<tr class="${i%2===1?'rel-row-alt':''}">
+              <td><strong style="color:var(--primary)">#${c.id}</strong></td>
+              <td><strong>${c.titulo}</strong></td>
+              <td>${c.categoria}</td>
+              <td><span class="rel-prio rel-prio-${c.prioridade.toLowerCase()}">${c.prioridade}</span></td>
+              <td>${c.solicitante}</td>
+              <td>${c.unidade||'Matriz'}</td>
+              <td><span class="badge badge-${c.status}">${c.status}</span></td>
+              <td style="white-space:nowrap">${formatDate(c.criado)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <!-- RESERVAS -->
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white"><i class="ti ti-calendar-event"></i> Reservas (${reservas.length}) — ordenadas por data</span>
+    </div>
+    <div class="rel-table-wrap">
+      <table class="rel-table">
+        <thead><tr>
+          <th>#</th><th>Equipamento</th><th>Solicitante</th><th>Cargo</th>
+          <th>Sala</th><th>Data</th><th>Período</th><th>Qtd</th>
+          <th>Unidade</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          ${reservas.length===0?'<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--gray-400)">Nenhuma reserva</td></tr>':
+            reservas.map((r,i)=>`<tr class="${i%2===1?'rel-row-alt':''}">
+              <td><strong style="color:var(--primary)">#${r.id}</strong></td>
+              <td><strong>${r.equipamento}</strong></td>
+              <td>${r.solicitante}</td>
+              <td style="font-size:11px">${r.cargo}</td>
+              <td><strong>${r.sala}</strong></td>
+              <td style="white-space:nowrap"><strong>${formatDate(r.dataInicio)}</strong></td>
+              <td style="font-size:11px">${r.aulas&&r.aulas.length?getLabelAulas(r.aulas):r.horaInicio?`${r.horaInicio}–${r.horaFim}`:'—'}</td>
+              <td style="text-align:center">${r.quantidade||1}</td>
+              <td>${r.unidade||'Matriz'}</td>
+              <td><span class="badge badge-${r.status}">${r.status}</span></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ${relPrintFooter()}`;
+}
+function renderRelChamados() {
+  const f = getRelFiltros();
+  let list = STATE.chamados;
+  if (f.uni) list = list.filter(c => (c.unidade||'Matriz') === f.uni);
+  if (f.st)  list = list.filter(c => c.status === f.st);
+  list = filterByDate(list, 'criado', f.de, f.ate);
+  const total=list.length;
+  const abertos=list.filter(c=>c.status==='aberto').length;
+  const andamento=list.filter(c=>c.status==='andamento').length;
+  const fechados=list.filter(c=>c.status==='fechado').length;
+  const suspensos=list.filter(c=>c.status==='suspenso').length;
+  const alta=list.filter(c=>c.prioridade==='Alta').length;
+  const media=list.filter(c=>c.prioridade==='Media').length;
+  const baixa=list.filter(c=>c.prioridade==='Baixa').length;
+  const periodo = f.de && f.ate ? `${formatDate(f.de)} a ${formatDate(f.ate)}` : f.de ? `A partir de ${formatDate(f.de)}` : f.ate ? `Até ${formatDate(f.ate)}` : 'Todo o período';
+  const unidLabel = f.uni || 'Todas as unidades';
+  return `
+  ${relPrintHeader('Relatório Detalhado de Chamados')}
+  <!-- RESUMO DO FILTRO -->
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros aplicados:</span>
+    <span class="rel-filter-tag"><i class="ti ti-building"></i> ${unidLabel}</span>
+    <span class="rel-filter-tag"><i class="ti ti-calendar"></i> ${periodo}</span>
+    ${f.st ? `<span class="rel-filter-tag"><i class="ti ti-circle"></i> Status: ${f.st}</span>` : ''}
+  </div>
+  <!-- KPIs -->
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${total}</div><div class="rel-kpi-label">Total de Chamados</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${abertos}</div><div class="rel-kpi-label">Abertos</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${andamento}</div><div class="rel-kpi-label">Em Andamento</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${fechados}</div><div class="rel-kpi-label">Fechados</div></div>
+    <div class="rel-kpi gray"><div class="rel-kpi-num">${suspensos}</div><div class="rel-kpi-label">Suspensos</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${alta}</div><div class="rel-kpi-label">Prioridade Alta</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${media}</div><div class="rel-kpi-label">Prioridade Média</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${baixa}</div><div class="rel-kpi-label">Prioridade Baixa</div></div>
+  </div>
+  <!-- TABELA COMPLETA -->
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-headset"></i> Chamados — Detalhamento Completo (${total} registros)</span>
+    </div>
+    <div class="table-wrapper">
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th>Título</th>
+            <th>Descrição Completa</th>
+            <th>Categoria</th>
+            <th>Prioridade</th>
+            <th>Solicitante</th>
+            <th>Atribuído</th>
+            <th>Unidade</th>
+            <th>Status</th>
+            <th>Data Abertura</th>
+            <th>Última Atualização</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.length === 0
+            ? '<tr><td colspan="11"><div class="empty-state"><i class="ti ti-mood-happy"></i><h3>Nenhum chamado no período</h3></div></td></tr>'
+            : list.map((c,i)=>`
+            <tr class="${i%2===1?'rel-row-alt':''}">
+              <td><strong style="color:var(--primary);font-size:13px">#${c.id}</strong></td>
+              <td><strong style="font-size:13px">${c.titulo}</strong></td>
+              <td style="font-size:12px;color:var(--gray-600);max-width:220px;line-height:1.4">${c.descricao}</td>
+              <td><span class="badge badge-reservado" style="font-size:11px">${c.categoria}</span></td>
+              <td><span class="rel-prio rel-prio-${c.prioridade.toLowerCase()}">${c.prioridade}</span></td>
+              <td style="font-size:13px"><strong>${c.solicitante}</strong></td>
+              <td style="font-size:12px">${c.atribuido||'<span style="color:var(--gray-400)">Não atribuído</span>'}</td>
+              <td style="font-size:12px">${c.unidade||'Matriz'}</td>
+              <td><span class="badge badge-${c.status}" style="font-size:11px">${c.status}</span></td>
+              <td style="font-size:12px;white-space:nowrap">${formatDate(c.criado)}</td>
+              <td style="font-size:12px;white-space:nowrap">${formatDate(c.atualizado)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ${relPrintFooter()}`;
+}
+// ============================================================
+// RELATÓRIO: RESERVAS
+// ============================================================
+function renderRelReservas() {
+  const f = getRelFiltros();
+  let list = STATE.reservas;
+  if (f.uni) list = list.filter(r => (r.unidade||'Matriz') === f.uni);
+  if (f.st)  list = list.filter(r => r.status === f.st);
+  list = filterByDate(list, 'dataInicio', f.de, f.ate);
+  const total=list.length;
+  const ativas=list.filter(r=>r.status==='ativo').length;
+  const fechadas=list.filter(r=>r.status==='fechado').length;
+  const suspensos=list.filter(r=>r.status==='suspenso').length;
+  const qtdTotal=list.reduce((a,r)=>a+(r.quantidade||1),0);
+  const equipsDistintos=[...new Set(list.map(r=>r.equipamento))].length;
+  const solicitDistintos=[...new Set(list.map(r=>r.solicitante))].length;
+  const periodo = f.de && f.ate ? `${formatDate(f.de)} a ${formatDate(f.ate)}` : 'Todo o período';
+  return `
+  ${relPrintHeader('Relatório Detalhado de Reservas')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag"><i class="ti ti-building"></i> ${f.uni||'Todas as unidades'}</span>
+    <span class="rel-filter-tag"><i class="ti ti-calendar"></i> ${periodo}</span>
+    ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
+  </div>
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${total}</div><div class="rel-kpi-label">Total de Reservas</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${ativas}</div><div class="rel-kpi-label">Reservas Ativas</div></div>
+    <div class="rel-kpi gray"><div class="rel-kpi-num">${fechadas}</div><div class="rel-kpi-label">Concluídas</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${suspensos}</div><div class="rel-kpi-label">Suspensas</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${qtdTotal}</div><div class="rel-kpi-label">Itens Reservados (total)</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">${equipsDistintos}</div><div class="rel-kpi-label">Equipamentos Distintos</div></div>
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${solicitDistintos}</div><div class="rel-kpi-label">Solicitantes Distintos</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${[...new Set(list.map(r=>r.sala))].length}</div><div class="rel-kpi-label">Salas/Turmas</div></div>
+  </div>
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-calendar-event"></i> Reservas — Detalhamento Completo (${total} registros)</span>
+    </div>
+    <div class="table-wrapper">
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Equipamento</th>
+            <th>Tipo</th>
+            <th>Solicitante</th>
+            <th>Cargo</th>
+            <th>Sala / Turma</th>
+            <th>Data Reserva</th>
+            <th>Horário Início</th>
+            <th>Horário Fim</th>
+            <th>Duração</th>
+            <th>Quantidade</th>
+            <th>Unidade</th>
+            <th>Status</th>
+            <th>Data Cadastro</th>
+            <th>Observações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.length === 0
+            ? '<tr><td colspan="15"><div class="empty-state"><i class="ti ti-calendar-off"></i><h3>Nenhuma reserva no período</h3></div></td></tr>'
+            : list.map((r,i)=>{
+                const hi=r.horaInicio||'00:00', hf=r.horaFim||'00:00';
+                const [hhi,mmi]=hi.split(':').map(Number);
+                const [hhf,mmf]=hf.split(':').map(Number);
+                const dur=((hhf*60+mmf)-(hhi*60+mmi));
+                const durStr=dur>0?`${Math.floor(dur/60)}h${dur%60>0?String(dur%60).padStart(2,'0')+'min':''}`:'-';
+                return `<tr class="${i%2===1?'rel-row-alt':''}">
+                  <td><strong style="color:var(--primary)">#${r.id}</strong></td>
+                  <td><strong style="font-size:13px">${r.equipamento}</strong></td>
+                  <td><span class="badge badge-reservado" style="font-size:11px">${r.equipamentoTipo}</span></td>
+                  <td style="font-size:13px"><strong>${r.solicitante}</strong></td>
+                  <td style="font-size:12px;color:var(--gray-500)">${r.cargo}</td>
+                  <td style="font-size:13px"><strong>${r.sala}</strong></td>
+                  <td style="font-size:12px;white-space:nowrap"><strong>${formatDate(r.dataInicio)}</strong></td>
+                  <td style="font-size:13px;text-align:center"><strong>${r.horaInicio}</strong></td>
+                  <td style="font-size:13px;text-align:center"><strong>${r.horaFim}</strong></td>
+                  <td style="font-size:12px;text-align:center;color:var(--primary)">${durStr}</td>
+                  <td style="text-align:center"><strong style="font-size:14px">${r.quantidade||1}</strong></td>
+                  <td style="font-size:12px">${r.unidade||'Matriz'}</td>
+                  <td><span class="badge badge-${r.status}" style="font-size:11px">${r.status}</span></td>
+                  <td style="font-size:11px;color:var(--gray-400)">${formatDate(r.criado)}</td>
+                  <td style="font-size:12px;color:var(--gray-500)">${r.obs||'—'}</td>
+                </tr>`;
+              }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ${relPrintFooter()}`;
+}
+// ============================================================
+// RELATÓRIO: INVENTÁRIO
+// ============================================================
+function renderRelInventario() {
+  const f = getRelFiltros();
+  let list = STATE.inventario;
+  if (f.uni) list = list.filter(i => i.unidade === f.uni);
+  if (f.st)  list = list.filter(i => i.status === f.st);
+  const cats={};
+  list.forEach(i=>{ cats[i.categoria]=(cats[i.categoria]||0)+1; });
+  return `
+  ${relPrintHeader('Relatório de Inventário TI')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
+    ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
+  </div>
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Total de Itens</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${list.filter(i=>i.status==='ativo').length}</div><div class="rel-kpi-label">Ativos</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${list.filter(i=>i.status==='manutencao').length}</div><div class="rel-kpi-label">Em Manutenção</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(i=>i.status==='inativo').length}</div><div class="rel-kpi-label">Inativos</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${list.filter(i=>i.categoria==='Rede').length}</div><div class="rel-kpi-label">Equipamentos de Rede</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${list.filter(i=>i.categoria==='Impressora').length}</div><div class="rel-kpi-label">Impressoras</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(i=>diasParaVencer(i.garantia)<90&&diasParaVencer(i.garantia)>0).length}</div><div class="rel-kpi-label">Garantia a Vencer</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">${Object.keys(cats).length}</div><div class="rel-kpi-label">Categorias</div></div>
+  </div>
+  <!-- SUMÁRIO POR CATEGORIA -->
+  <div class="card mb-20">
+    <div class="card-header"><span class="card-title"><i class="ti ti-chart-bar"></i> Resumo por Categoria</span></div>
+    <div class="card-body">
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        ${Object.entries(cats).map(([cat,qtd])=>`
+        <div style="background:var(--primary-light);border:1px solid var(--primary-mid);border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px;font-weight:800;color:var(--primary)">${qtd}</span>
+          <span style="font-size:13px;font-weight:600;color:var(--gray-700)">${cat}</span>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-server"></i> Inventário Completo — Todos os Campos (${list.length} itens)</span>
+    </div>
+    <div class="table-wrapper">
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>Nome do Equipamento</th>
+            <th>Categoria</th>
+            <th>Tipo</th>
+            <th>Marca</th>
+            <th>Modelo</th>
+            <th>Nº Patrimônio</th>
+            <th>Nº de Série</th>
+            <th>Endereço IP</th>
+            <th>Local / Sala</th>
+            <th>Unidade</th>
+            <th>Garantia até</th>
+            <th>Status</th>
+            <th>Observações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.length === 0
+            ? '<tr><td colspan="13"><div class="empty-state"><i class="ti ti-server-off"></i><h3>Nenhum item</h3></div></td></tr>'
+            : list.map((i,idx)=>{
+                const gd=diasParaVencer(i.garantia);
+                const gc=gd<30?'var(--danger)':gd<90?'var(--warning)':'inherit';
+                return `<tr class="${idx%2===1?'rel-row-alt':''}">
+                  <td><strong style="font-size:13px">${i.nome}</strong></td>
+                  <td><span class="badge badge-reservado" style="font-size:11px">${i.categoria}</span></td>
+                  <td style="font-size:12px">${i.tipo||'—'}</td>
+                  <td style="font-size:13px"><strong>${i.marca||'—'}</strong></td>
+                  <td style="font-size:12px">${i.modelo||'—'}</td>
+                  <td><code style="font-size:11px;background:var(--gray-100);padding:2px 5px;border-radius:4px">${i.patrimonio}</code></td>
+                  <td style="font-size:11px;color:var(--gray-500)">${i.serie||'—'}</td>
+                  <td><code style="font-size:11px">${i.ip||'—'}</code></td>
+                  <td style="font-size:12px">${i.local||'—'}</td>
+                  <td style="font-size:12px">${i.unidade}</td>
+                  <td style="font-size:12px;color:${gc};font-weight:600">${formatDate(i.garantia)||'—'}</td>
+                  <td><span class="badge badge-${i.status==='ativo'?'fechado':i.status==='inativo'?'suspenso':'andamento'}" style="font-size:11px">${i.status}</span></td>
+                  <td style="font-size:11px;color:var(--gray-500)">${i.obs||'—'}</td>
+                </tr>`;
+              }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ${relPrintFooter()}`;
+}
+// ============================================================
+// RELATÓRIO: LICENÇAS
+// ============================================================
+function renderRelLicencas() {
+  const f = getRelFiltros();
+  let list = STATE.licencas;
+  if (f.uni) list = list.filter(l => l.unidade === f.uni);
+  if (f.st)  list = list.filter(l => l.status === f.st);
+  const totalValor = list.reduce((a,l)=>a+l.valor,0);
+  const totalQtd   = list.reduce((a,l)=>a+(l.quantidade||0),0);
+  return `
+  ${relPrintHeader('Relatório de Licenças de Software')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
+    ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
+  </div>
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Total de Licenças</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${list.filter(l=>l.status==='ativo').length}</div><div class="rel-kpi-label">Ativas</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${list.filter(l=>l.status==='vencendo').length}</div><div class="rel-kpi-label">A Vencer (≤30 dias)</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(l=>l.status==='expirado').length}</div><div class="rel-kpi-label">Expiradas</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${totalQtd}</div><div class="rel-kpi-label">Total de Assentos</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">R$ ${totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="rel-kpi-label">Investimento Total</div></div>
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.filter(l=>diasParaVencer(l.vencimento)<=90&&diasParaVencer(l.vencimento)>0).length}</div><div class="rel-kpi-label">Vencem em 90 dias</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${list.filter(l=>l.vencimento==='9999-12-31').length}</div><div class="rel-kpi-label">Perpétuas</div></div>
+  </div>
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-license"></i> Licenças de Software — Detalhamento Completo (${list.length})</span>
+    </div>
+    <div class="table-wrapper">
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Software</th>
+            <th>Fornecedor</th>
+            <th>Tipo</th>
+            <th>Qtd Licenças</th>
+            <th>Unidade</th>
+            <th>Chave / Código</th>
+            <th>Data Compra</th>
+            <th>Data Vencimento</th>
+            <th>Dias Restantes</th>
+            <th>Valor (R$)</th>
+            <th>Status</th>
+            <th>Observações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.length === 0
+            ? '<tr><td colspan="13"><div class="empty-state"><i class="ti ti-license-off"></i><h3>Nenhuma licença</h3></div></td></tr>'
+            : list.map((l,i)=>{
+                const dias=diasParaVencer(l.vencimento);
+                const ac=dias<=30?'var(--danger)':dias<=90?'var(--warning)':'var(--success)';
+                const diasLabel=dias>=9999?'Perpétua':`${dias} dias`;
+                return `<tr class="${i%2===1?'rel-row-alt':''}">
+                  <td><strong style="color:var(--primary)">#${l.id}</strong></td>
+                  <td><strong style="font-size:13px">${l.nome}</strong></td>
+                  <td style="font-size:13px">${l.fornecedor}</td>
+                  <td><span class="badge badge-reservado" style="font-size:11px">${l.tipo}</span></td>
+                  <td style="text-align:center"><strong style="font-size:14px">${l.quantidade}</strong></td>
+                  <td style="font-size:12px">${l.unidade}</td>
+                  <td style="font-size:11px;font-family:monospace;color:var(--gray-500)">${l.chave||'—'}</td>
+                  <td style="font-size:12px;white-space:nowrap">${formatDate(l.dataCompra)}</td>
+                  <td style="font-size:12px;white-space:nowrap"><strong style="color:${ac}">${formatDate(l.vencimento)}</strong></td>
+                  <td style="font-size:12px;white-space:nowrap"><strong style="color:${ac}">${diasLabel}</strong></td>
+                  <td style="font-size:12px;white-space:nowrap;text-align:right"><strong>R$ ${l.valor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong></td>
+                  <td><span class="badge badge-${l.status==='ativo'?'fechado':l.status==='vencendo'?'andamento':'suspenso'}" style="font-size:11px">${l.status}</span></td>
+                  <td style="font-size:11px;color:var(--gray-500)">${l.obs||'—'}</td>
+                </tr>`;
+              }).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--gray-50);font-weight:700">
+            <td colspan="4" style="padding:10px 14px;font-size:13px">TOTAIS</td>
+            <td style="text-align:center;padding:10px 14px">${totalQtd}</td>
+            <td colspan="5" style="padding:10px 14px"></td>
+            <td style="text-align:right;padding:10px 14px;color:var(--primary)">R$ ${totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+            <td colspan="2" style="padding:10px 14px"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  ${relPrintFooter()}`;
+}
+// ============================================================
+// RELATÓRIO: EQUIPAMENTOS
+// ============================================================
+function renderRelEquipamentos() {
+  const f = getRelFiltros();
+  let list = STATE.equipamentos;
+  if (f.uni) list = list.filter(e => e.unidade === f.uni);
+  if (f.st)  list = list.filter(e => e.status === f.st);
+  const qtdTotal = list.reduce((a,e)=>a+(e.quantidade||1),0);
+  return `
+  ${relPrintHeader('Relatório de Equipamentos')}
+  <div class="rel-filter-summary">
+    <span><i class="ti ti-filter"></i> Filtros:</span>
+    <span class="rel-filter-tag">${f.uni||'Todas as unidades'}</span>
+    ${f.st ? `<span class="rel-filter-tag">Status: ${f.st}</span>` : ''}
+  </div>
+  <div class="rel-kpi-grid">
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.length}</div><div class="rel-kpi-label">Tipos Cadastrados</div></div>
+    <div class="rel-kpi teal"><div class="rel-kpi-num">${qtdTotal}</div><div class="rel-kpi-label">Quantidade Total</div></div>
+    <div class="rel-kpi green"><div class="rel-kpi-num">${list.filter(e=>e.status==='disponivel').length}</div><div class="rel-kpi-label">Disponíveis</div></div>
+    <div class="rel-kpi orange"><div class="rel-kpi-num">${list.filter(e=>e.status==='reservado').length}</div><div class="rel-kpi-label">Reservados</div></div>
+    <div class="rel-kpi red"><div class="rel-kpi-num">${list.filter(e=>e.status==='manutencao').length}</div><div class="rel-kpi-label">Em Manutenção</div></div>
+    <div class="rel-kpi gray"><div class="rel-kpi-num">${list.filter(e=>e.status==='inativo').length}</div><div class="rel-kpi-label">Inativos</div></div>
+    <div class="rel-kpi blue"><div class="rel-kpi-num">${list.filter(e=>e.unidade==='Matriz').length}</div><div class="rel-kpi-label">Unidade Matriz</div></div>
+    <div class="rel-kpi purple"><div class="rel-kpi-num">${list.filter(e=>e.unidade==='Ensino Médio').length}</div><div class="rel-kpi-label">Ensino Médio</div></div>
+  </div>
+  <div class="card mb-20">
+    <div class="card-header" style="background:var(--primary);padding:14px 20px">
+      <span class="card-title" style="color:white;font-size:15px"><i class="ti ti-devices"></i> Equipamentos — Detalhamento Completo (${list.length} registros | ${qtdTotal} unidades)</span>
+    </div>
+    <div class="table-wrapper">
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>Nome do Equipamento</th>
+            <th>Tipo</th>
+            <th>Marca</th>
+            <th>Modelo</th>
+            <th>Nº Patrimônio</th>
+            <th>Nº de Série</th>
+            <th>Local / Sala</th>
+            <th>Unidade</th>
+            <th>Quantidade</th>
+            <th>Status</th>
+            <th>Descrição / Especificações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.length === 0
+            ? '<tr><td colspan="11"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>'
+            : list.map((e,i)=>`
+            <tr class="${i%2===1?'rel-row-alt':''}">
+              <td><strong style="font-size:13px">${e.nome}</strong></td>
+              <td><span class="badge badge-reservado" style="font-size:11px">${e.tipo}</span></td>
+              <td style="font-size:13px"><strong>${e.marca||'—'}</strong></td>
+              <td style="font-size:12px">${e.modelo||'—'}</td>
+              <td><code style="font-size:11px;background:var(--gray-100);padding:2px 5px;border-radius:4px">${e.patrimonio}</code></td>
+              <td style="font-size:11px;color:var(--gray-500)">${e.serie||'—'}</td>
+              <td style="font-size:12px">${e.local||'—'}</td>
+              <td style="font-size:12px">${e.unidade}</td>
+              <td style="text-align:center"><strong style="font-size:15px;color:var(--primary)">${e.quantidade||1}</strong></td>
+              <td>${equipStatus(e.status)}</td>
+              <td style="font-size:12px;color:var(--gray-500)">${e.descricao||'—'}</td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--gray-50);font-weight:700">
+            <td colspan="8" style="padding:10px 14px;font-size:13px">TOTAL DE UNIDADES</td>
+            <td style="text-align:center;padding:10px 14px;font-size:16px;color:var(--primary)">${qtdTotal}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  ${relPrintFooter()}`;
+}
+function renderRelatorioCharts() {
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  // Chart: chamados por mês
+  const ctx1=document.getElementById('chart-mensal');
+  if(ctx1) new Chart(ctx1,{type:'line',data:{labels:meses,datasets:[{label:'Chamados',data:meses.map(()=>Math.floor(Math.random()*8)+1),borderColor:'#0073c8',backgroundColor:'rgba(0,115,200,.1)',tension:.4,fill:true,pointRadius:5,pointBackgroundColor:'#0073c8'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  // Chart: status chamados
+  const ctx_st=document.getElementById('chart-status-rel');
+  if(ctx_st) new Chart(ctx_st,{type:'doughnut',data:{labels:['Aberto','Em Andamento','Fechado','Suspenso'],datasets:[{data:[STATE.chamados.filter(c=>c.status==='aberto').length,STATE.chamados.filter(c=>c.status==='andamento').length,STATE.chamados.filter(c=>c.status==='fechado').length,STATE.chamados.filter(c=>c.status==='suspenso').length],backgroundColor:['#e74c3c','#e67e22','#27ae60','#95a5a6'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
+  // Chart: prioridade
+  const ctx2=document.getElementById('chart-prio');
+  if(ctx2) new Chart(ctx2,{type:'pie',data:{labels:['Alta','Média','Baixa'],datasets:[{data:[STATE.chamados.filter(c=>c.prioridade==='Alta').length,STATE.chamados.filter(c=>c.prioridade==='Media').length,STATE.chamados.filter(c=>c.prioridade==='Baixa').length],backgroundColor:['#e74c3c','#e67e22','#27ae60'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
+  // Chart: por categoria
+  const cats_={};STATE.chamados.forEach(c=>{cats_[c.categoria]=(cats_[c.categoria]||0)+1;});
+  const ctx_cat=document.getElementById('chart-cat-rel');
+  if(ctx_cat) new Chart(ctx_cat,{type:'bar',data:{labels:Object.keys(cats_),datasets:[{label:'Chamados',data:Object.values(cats_),backgroundColor:['#0073c8','#27ae60','#e67e22','#e74c3c','#7b1fa2','#009688'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  // Chart: uso por equipamento
+  const eu={};STATE.reservas.forEach(r=>{eu[r.equipamentoTipo]=(eu[r.equipamentoTipo]||0)+1;});
+  const ctx3=document.getElementById('chart-equip-uso');
+  if(ctx3) new Chart(ctx3,{type:'bar',data:{labels:Object.keys(eu),datasets:[{label:'Reservas',data:Object.values(eu),backgroundColor:'#0073c8',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  // Chart: chamados por usuário
+  const uu={};STATE.chamados.forEach(c=>{const n=c.solicitante.split(' ')[0];uu[n]=(uu[n]||0)+1;});
+  const ctx4=document.getElementById('chart-user');
+  if(ctx4) new Chart(ctx4,{type:'bar',data:{labels:Object.keys(uu),datasets:[{label:'Chamados',data:Object.values(uu),backgroundColor:['#0073c8','#27ae60','#e67e22','#7b1fa2'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  // Chart: por unidade
+  const unid={Matriz:STATE.chamados.filter(c=>(c.unidade||'Matriz')==='Matriz').length,'Ensino Médio':STATE.chamados.filter(c=>c.unidade==='Ensino Médio').length};
+  const ctx5=document.getElementById('chart-unidade');
+  if(ctx5) new Chart(ctx5,{type:'doughnut',data:{labels:Object.keys(unid),datasets:[{data:Object.values(unid),backgroundColor:['#0073c8','#7b1fa2'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
+  // Chart: licenças dias restantes
+  const ctx6=document.getElementById('chart-lic');
+  if(ctx6) new Chart(ctx6,{type:'bar',data:{labels:STATE.licencas.map(l=>l.nome.split(' ').slice(0,2).join(' ')),datasets:[{label:'Dias restantes',data:STATE.licencas.map(l=>Math.min(diasParaVencer(l.vencimento),730)),backgroundColor:STATE.licencas.map(l=>diasParaVencer(l.vencimento)<=30?'#e74c3c':diasParaVencer(l.vencimento)<=90?'#e67e22':'#27ae60'),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+  // Chart: equipamentos por status
+  const eq_st={Disponível:STATE.equipamentos.filter(e=>e.status==='disponivel').length,Reservado:STATE.equipamentos.filter(e=>e.status==='reservado').length,Manutenção:STATE.equipamentos.filter(e=>e.status==='manutencao').length,Inativo:STATE.equipamentos.filter(e=>e.status==='inativo').length};
+  const ctx_eq=document.getElementById('chart-equip-status');
+  if(ctx_eq) new Chart(ctx_eq,{type:'doughnut',data:{labels:Object.keys(eq_st),datasets:[{data:Object.values(eq_st),backgroundColor:['#27ae60','#0073c8','#e67e22','#95a5a6'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}}}});
+  // Chart: reservas por mês
+  const ctx_rm=document.getElementById('chart-res-mensal');
+  if(ctx_rm) new Chart(ctx_rm,{type:'bar',data:{labels:meses,datasets:[{label:'Reservas',data:meses.map(()=>Math.floor(Math.random()*6)+1),backgroundColor:'rgba(0,115,200,.7)',borderRadius:6},{label:'Chamados',data:meses.map(()=>Math.floor(Math.random()*5)+1),backgroundColor:'rgba(231,76,60,.7)',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{family:'Nunito',size:12}}}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+}
+// ===== MODALS: RESERVA =====
+function openModalReserva(reservaId=null, preData=null, unidadeFixa=null) {
+  const r=reservaId?STATE.reservas.find(r=>r.id===reservaId):null;
+  const unidadeDefault = unidadeFixa || r?.unidade || 'Matriz';
+  const TIPOS=['Apresentador', 'Caixa de Som', 'Controle Projetor', 'Câmera', 'Filmadora', 'Impressora', 'Microfone', 'Monitor', 'Mouse', 'Notebook', 'Projetor', 'Rádio Comunicador Motorola', 'Tablet', 'Teclado', 'WebCam', 'iPad', 'Roteador', 'Switch', 'Outro'];
+  openModal(`
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ti ti-calendar-plus"></i> ${r?'Editar Reserva':'Nova Reserva'}</span>
+      <button class="btn-icon" onclick="closeModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Tipo de Equipamento</label>
+          <select id="res-tipo" onchange="updateEquipList()">
+            <option value="">Selecione...</option>${TIPOS.map(t=>`<option ${r?.equipamentoTipo===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="required">Equipamento</label>
+          <select id="res-equip" onchange="checkOutroEquip()"><option value="">Selecione o tipo primeiro...</option></select>
+        </div>
+      </div>
+      <div class="form-group" id="res-outro-equip-group" style="display:none">
+        <label class="required">Especifique o equipamento</label>
+        <input type="text" id="res-outro-equip" placeholder="Descreva o equipamento..." />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Unidade</label>
+          <select id="res-unidade"><option value="Matriz" ${unidadeDefault==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${unidadeDefault==='Ensino Médio'?'selected':''}>Ensino Médio</option></select>
+        </div>
+        <div class="form-group">
+          <label class="required">Cargo</label>
+          <select id="res-cargo"><option value="">Selecione...</option>${CARGOS.map(c=>`<option ${r?.cargo===c?'selected':''}>${c}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Nome do Solicitante</label>
+          <div style="position:relative">
+          <input type="text" id="res-nome" placeholder="Nome do solicitante" value="${r?.solicitante||''}" autocomplete="off" oninput="showUserSuggest(this,'res-nome-list')" />
+          <div id="res-nome-list" class="autocomplete-list" style="display:none"></div>
+        </div>
+        </div>
+        <div class="form-group">
+          <label class="required">Sala / Turma</label>
+          <select id="res-sala" onchange="toggleOutroSala(this)">
+            <option value="">Selecione...</option>${SALAS.map(s=>`<option ${r?.sala===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-group" id="res-outro-sala-group" style="display:none">
+        <label class="required">Especifique a sala</label>
+        <input type="text" id="res-outro-sala" placeholder="Nome da sala..." />
+      </div>
+      <!-- DATA -->
+      <div class="form-group">
+        <label class="required">Data da Reserva</label>
+        <input type="date" id="res-data" value="${r?.dataInicio||preData||dateNow()}" style="max-width:200px"/>
+      </div>
+      <!-- SELETOR DE AULAS -->
+      <div class="form-group">
+        <label>Período / Aulas</label>
+        <div class="aulas-grid">
+          <label class="aula-check todas" id="label-todas">
+            <input type="checkbox" id="aula-todas" onchange="toggleTodasAulas(this)">
+            <span class="aula-check-box"><i class="ti ti-checks"></i></span>
+            <span class="aula-check-label">Todas as Aulas</span>
+          </label>
+          ${AULAS.map(a=>`
+          <label class="aula-check" id="label-${a.id}">
+            <input type="checkbox" class="aula-cb" id="aula-${a.id}" value="${a.id}" onchange="sincronizarAulas()" ${r?.aulas&&r.aulas.includes(a.id)?'checked':''}>
+            <span class="aula-check-box">${a.label.split('ª')[0]}ª</span>
+            <span class="aula-check-label">${a.label}<br><small>${a.inicio} – ${a.fim}</small></span>
+          </label>`).join('')}
+        </div>
+      </div>
+      <!-- BOTÃO HORÁRIO MANUAL — integrado na grade de aulas -->
+      <div class="form-group" style="margin-top:-4px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button type="button" id="btn-horario-manual"
+            onclick="toggleHorarioManual()"
+            class="aula-horario-btn ${r&&!r.aulas?'ativo':''}"
+            style="${r&&!r.aulas?'background:var(--primary);color:white;border-color:var(--primary)':''}">
+            <i class="ti ti-clock"></i> Horário manual
+          </button>
+          <span id="horario-manual-preview" style="font-size:12px;color:var(--gray-400)"></span>
+        </div>
+        <div id="horario-manual-wrap" style="display:${r&&!r.aulas?'flex':'none'};gap:12px;margin-top:12px;align-items:flex-end;flex-wrap:wrap;padding:14px;background:var(--gray-50);border-radius:var(--radius-lg);border:1.5px solid var(--gray-200)">
+          <div>
+            <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:6px">Início</label>
+            <select id="res-hinicio" style="padding:9px 12px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;outline:none" onchange="atualizarPreviewHorario()">
+              <option value="">-- Selecione --</option>
+              ${HORAS.map(h=>`<option ${r?.horaInicio===h?'selected':''}>${h}</option>`).join('')}
+            </select>
+          </div>
+          <span style="font-size:22px;color:var(--gray-300);padding-bottom:4px">→</span>
+          <div>
+            <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:6px">Fim</label>
+            <select id="res-hfim" style="padding:9px 12px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;outline:none" onchange="atualizarPreviewHorario()">
+              <option value="">-- Selecione --</option>
+              ${HORAS.map(h=>`<option ${r?.horaFim===h?'selected':''}>${h}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Quantidade</label>
+          <div class="qty-control">
+            <button class="qty-btn" type="button" onclick="changeQty(-1)">−</button>
+            <input class="qty-value" type="number" id="res-qtd" value="${r?.quantidade||1}" min="1" max="99"/>
+            <button class="qty-btn" type="button" onclick="changeQty(1)">+</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Observações</label>
+          <input type="text" id="res-obs" placeholder="Informações adicionais..." value="${r?.obs||''}" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarReserva(${reservaId||'null'})"><i class="ti ti-check"></i> ${r?'Salvar':'Confirmar Reserva'}</button>
+    </div>
+  </div>`);
+  if(r) setTimeout(()=>updateEquipList(r.equipamento),60);
+}
+function updateEquipList(selectedEquip='') {
+  const tipo=$('#res-tipo')?.value, sel=$('#res-equip'), og=$('#res-outro-equip-group');
+  if(!sel) return;
+  if(tipo==='Outro'){ sel.innerHTML='<option value="outro">Outro (especificar abaixo)</option>'; if(og) og.style.display=''; return; }
+  if(og) og.style.display='none';
+  const list=STATE.equipamentos.filter(e=>e.tipo===tipo&&(e.status==='disponivel'||e.status==='reservado'));
+  // Garante que o equipamento já salvo apareça mesmo que esteja com outro status
+  const jaEstaNaLista=list.some(e=>e.nome===selectedEquip);
+  const equipSalvo=selectedEquip&&!jaEstaNaLista?STATE.equipamentos.find(e=>e.nome===selectedEquip):null;
+  const extraOption=equipSalvo?`<option value="${equipSalvo.id}" selected>${equipSalvo.nome} (${equipSalvo.status})</option>`:'';
+  sel.innerHTML=`<option value="">Selecione...</option>${extraOption}${list.map(e=>`<option value="${e.id}" ${e.nome===selectedEquip?'selected':''}>${e.nome} (${e.status})</option>`).join('')}<option value="outro">Outro (especificar)</option>`;
+}
+function checkOutroEquip(){ const sel=$('#res-equip'), og=$('#res-outro-equip-group'); if(og) og.style.display=sel?.value==='outro'?'':'none'; }
+function toggleTodasAulas(cb) {
+  const cbs = $$('.aula-cb');
+  cbs.forEach(c => { c.checked = cb.checked; });
+  atualizarEstiloAulas();
+}
+function sincronizarAulas() {
+  const cbs = $$('.aula-cb');
+  const todas = document.getElementById('aula-todas');
+  if (todas) todas.checked = cbs.every(c => c.checked);
+  atualizarEstiloAulas();
+}
+function atualizarEstiloAulas() {
+  $$('.aula-check').forEach(lbl => {
+    const cb = lbl.querySelector('input[type="checkbox"]');
+    if (cb) lbl.classList.toggle('checked', cb.checked);
+  });
+}
+function toggleHorarioManual() {
+  const wrap = document.getElementById('horario-manual-wrap');
+  const btn  = document.getElementById('btn-horario-manual');
+  if (!wrap) return;
+  const isOpen = wrap.style.display !== 'none';
+  wrap.style.display = isOpen ? 'none' : 'flex';
+  if (btn) {
+    btn.style.background     = isOpen ? '' : 'var(--primary)';
+    btn.style.color          = isOpen ? '' : 'white';
+    btn.style.borderColor    = isOpen ? '' : 'var(--primary)';
+  }
+  if (!isOpen) {
+    // Ao abrir, limpar seleção de aulas para evitar conflito
+    $$('.aula-cb').forEach(c => c.checked = false);
+    const todas = document.getElementById('aula-todas');
+    if (todas) todas.checked = false;
+    atualizarEstiloAulas();
+  } else {
+    atualizarPreviewHorario();
+  }
+}
+function atualizarPreviewHorario() {
+  const hi = document.getElementById('res-hinicio')?.value;
+  const hf = document.getElementById('res-hfim')?.value;
+  const prev = document.getElementById('horario-manual-preview');
+  if (prev) prev.textContent = hi && hf ? `${hi} – ${hf}` : '';
+}
+function getAulasSelecionadas() {
+  const selecionadas = [];
+  $$('.aula-cb').forEach(cb => { if (cb.checked) selecionadas.push(cb.value); });
+  return selecionadas;
+}
+function getHorarioDasAulas(aulas) {
+  if (!aulas || !aulas.length) return { inicio: '', fim: '' };
+  const ordered = AULAS.filter(a => aulas.includes(a.id));
+  if (!ordered.length) return { inicio: '', fim: '' };
+  return { inicio: ordered[0].inicio, fim: ordered[ordered.length - 1].fim };
+}
+function getLabelAulas(aulas) {
+  if (!aulas || !aulas.length) return '';
+  if (aulas.length === AULAS.length) return 'Todas as Aulas';
+  return AULAS.filter(a => aulas.includes(a.id)).map(a => a.label).join(', ');
+}
+function toggleOutroSala(sel){ const g=$('#res-outro-sala-group'); if(g) g.style.display=sel.value==='Outro'?'':'none'; }
+function changeQty(d){ const i=$('#res-qtd'); if(i) i.value=Math.max(1,Math.min(99,parseInt(i.value)+d)); }
+function editReserva(id){ openModalReserva(id); }
+async function salvarReserva(id) {
+  const reservaAtual = id ? STATE.reservas.find(r=>r.id===id) : null;
+  const tipo=$('#res-tipo')?.value || (reservaAtual?.equipamentoTipo||'');
+  const equipVal=$('#res-equip')?.value;
+  // Se o campo equipamento estiver vazio mas estivermos editando, mantém o nome já salvo
+  let equipNome='';
+  if(equipVal==='outro') {
+    equipNome=($('#res-outro-equip')?.value||'').trim();
+  } else if(equipVal && equipVal!=='') {
+    equipNome=STATE.equipamentos.find(e=>e.id==equipVal)?.nome||equipVal;
+  } else if(reservaAtual) {
+    equipNome=reservaAtual.equipamento; // mantém o equipamento já salvo
+  }
+  const cargo=$('#res-cargo')?.value, nome=$('#res-nome')?.value.trim();
+  const salaVal=$('#res-sala')?.value, sala=salaVal==='Outro'?($('#res-outro-sala')?.value||'').trim():salaVal;
+  const data=$('#res-data')?.value;
+  const aulasSel = getAulasSelecionadas();
+  const horarioManual = document.getElementById('horario-manual-wrap')?.style.display !== 'none';
+  let hinicio = '', hfim = '';
+  if (horarioManual) {
+    hinicio = $('#res-hinicio')?.value || '';
+    hfim    = $('#res-hfim')?.value   || '';
+  } else if (aulasSel.length) {
+    const h = getHorarioDasAulas(aulasSel);
+    hinicio = h.inicio; hfim = h.fim;
+  }
+  const qtd=parseInt($('#res-qtd')?.value)||1, obs=$('#res-obs')?.value||'', unidade=$('#res-unidade')?.value||'Matriz';
+  if(!tipo||!equipNome||!cargo||!nome||!sala||!data){ toast('Preencha todos os campos obrigatórios.','error'); return; }
+  if(!aulasSel.length && !hinicio){ toast('Selecione pelo menos uma aula ou defina um horário.','error'); return; }
+  if(id){ const r=STATE.reservas.find(r=>r.id===id); if(r){ Object.assign(r,{equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:data,horaInicio:hinicio,horaFim:hfim,aulas:aulasSel,quantidade:qtd,obs,unidade}); const fbResult = await fbSave('reservas',r.id,r); if(fbResult === true){ toast('Reserva atualizada!'); } else if(fbResult === false){ toast('Reserva atualizada localmente.','info'); } } }
+  else {
+    const recorrencia = $('#res-recorrencia')?.value || '';
+    const datas = gerarDatasRecorrentes(data, recorrencia);
+    for (const dt of datas) {
+      const nr={id:STATE.nextId.reserva++,equipamentoTipo:tipo,equipamento:equipNome,cargo,solicitante:nome,sala,dataInicio:dt,horaInicio:hinicio,horaFim:hfim,aulas:aulasSel,quantidade:qtd,obs,unidade,status:'ativo',criado:dateNow(),recorrencia:recorrencia||null};
+      STATE.reservas.push(nr);
+      try {
+        const fbResult = await fbSave('reservas',nr.id,nr);
+        if(fbResult === true){ /* sucesso na nuvem */ }
+        else if(fbResult === false){ toast('Reserva criada localmente.','info'); }
+      } catch(e) {
+        // Firebase falhou, mas dado ja foi salvo em STATE/localStorage
+        toast('Reserva salva localmente.','info');
+      }
+    }
+}
+    addNotification('Nova reserva criada', nome + ' reservou ' + equipNome + (datas.length>1? ' ('+datas.length+'x)':''), 'ti-calendar-plus');
+    toast(datas.length > 1 ? ' ' + datas.length + ' reservas criadas!' : ' Reserva criada!');
+  }
+  closeModal(); saveState(); renderPage(STATE.currentPage);
+// ===== MODALS: CHAMADO =====
+function openModalChamado(chamadoId=null, unidadeFixa=null) {
+  const c=chamadoId?STATE.chamados.find(c=>c.id===chamadoId):null;
+  const unidadeDefault = unidadeFixa || c?.unidade || 'Matriz';
+  openModal(`
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ti ti-headset"></i> ${c?'Editar Chamado':'Novo Chamado'}</span>
+      <button class="btn-icon" onclick="closeModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="required">Título do Chamado</label>
+        <input type="text" id="ch-titulo" placeholder="Descreva o problema brevemente..." value="${c?.titulo||''}" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Categoria</label>
+          <select id="ch-cat"><option value="">Selecione...</option>${['Acesso/Senha', 'Cabos', 'Canvas', 'Celular', 'Computador Sala', 'Câmera', 'E-mail', 'Hardware', 'Impressora', 'Internet/Web', 'Liberar Acesso', 'Notebook', 'Nuvem', 'Office', 'Office 365', 'Projetor', 'Rede', 'Reunião', 'Sistema', 'Software', 'Sophia', 'Telefone IP', 'Verificar Vírus', 'Vídeo', 'iPad', 'Áudio/Som', 'Outro'].map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}</select>
+        </div>
+        <div class="form-group">
+          <label class="required">Prioridade</label>
+          <select id="ch-prio">${['Baixa','Media','Alta'].map(p=>`<option ${c?.prioridade===p?'selected':''}>${p}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="required">Solicitante</label>
+          <div style="position:relative">
+          <input type="text" id="ch-sol" value="${c?.solicitante||''}" autocomplete="off" oninput="showUserSuggest(this,'ch-sol-list')" placeholder="Nome do solicitante" />
+          <div id="ch-sol-list" class="autocomplete-list" style="display:none"></div>
+        </div>
+        </div>
+        <div class="form-group">
+          <label>Unidade</label>
+          <select id="ch-unidade"><option value="Matriz" ${unidadeDefault==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${unidadeDefault==='Ensino Médio'?'selected':''}>Ensino Médio</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Data do Chamado</label>
+          <input type="date" id="ch-data" value="${c?.criado||dateNow()}" style="max-width:200px"/>
+        </div>
+        <div class="form-group">
+          <label>Horário</label>
+          <input type="time" id="ch-hora" value="${c?.hora||new Date().toTimeString().slice(0,5)}" style="max-width:140px"/>
+        </div>
+      </div>
+      ${STATE.currentUser.role==='admin'?`<div class="form-group"><label>Atribuir a (TI)</label><select id="ch-atrib"><option value="">Não atribuído</option>${STATE.users.filter(u=>u.role==='admin').map(u=>`<option value="${u.nome}" ${c?.atribuido===u.nome?'selected':''}>${u.nome}</option>`).join('')}</select></div>`:'<input type="hidden" id="ch-atrib" value="">'}
+      <div class="form-group">
+        <label class="required">Descrição Detalhada</label>
+        <textarea id="ch-desc" placeholder="Descreva o problema com o máximo de detalhes possível...">${c?.descricao||''}</textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarChamado(${chamadoId||'null'})"><i class="ti ti-check"></i> ${c?'Salvar':'Abrir Chamado'}</button>
+    </div>
+  </div>`);
+}
+function editChamado(id){ openModalChamado(id); }
+async function salvarChamado(id) {
+  const chamadoAtual = id ? STATE.chamados.find(c=>c.id===id) : null;
+  const titulo=($('#ch-titulo')?.value||'').trim() || (chamadoAtual?.titulo||'');
+  const cat=$('#ch-cat')?.value || (chamadoAtual?.categoria||'');
+  const prio=$('#ch-prio')?.value || (chamadoAtual?.prioridade||'');
+  const sol=($('#ch-sol')?.value||'').trim() || (chamadoAtual?.solicitante||'');
+  const atrib=$('#ch-atrib')?.value ?? (chamadoAtual?.atribuido||'');
+  const desc=($('#ch-desc')?.value||'').trim() || (chamadoAtual?.descricao||'');
+  const unidade=$('#ch-unidade')?.value || (chamadoAtual?.unidade||'Matriz');
+  const dataCh=$('#ch-data')?.value || (chamadoAtual?.criado||dateNow());
+  const horaCh=$('#ch-hora')?.value || (chamadoAtual?.hora||'');
+  if(!titulo||!cat||!prio||!sol||!desc){ toast('Preencha todos os campos obrigatórios.','error'); return; }
+  if(id){ const c=STATE.chamados.find(c=>c.id===id); if(c){ Object.assign(c,{titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,criado:dataCh,hora:horaCh,atualizado:dateNow()}); const fbResult = await fbSave('chamados',c.id,c); if(fbResult === true){ toast('Chamado atualizado!'); } else if(fbResult === false){ toast('Chamado atualizado localmente.','info'); } } }
+  else { const nc={id:STATE.nextId.chamado++,titulo,categoria:cat,prioridade:prio,solicitante:sol,descricao:desc,unidade,status:'aberto',criado:dataCh,hora:horaCh,atualizado:dateNow()}; STATE.chamados.push(nc); try { const fbResult = await fbSave('chamados',nc.id,nc); if(fbResult === true){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado aberto!'); } else if(fbResult === false){ addNotification('Novo chamado aberto',titulo,'ti-headset'); toast('Chamado criado localmente.','info'); } } catch(e) { // Firebase falhou, mas dado ja foi salvo em STATE/localStorage toast('Chamado criado localmente (erro na nuvem).','info'); } }
+  closeModal(); saveState(); renderPage(STATE.currentPage);
+}
+// ===== MODALS: INVENTÁRIO =====
+function openModalInventario(invId=null) {
+  const i=invId?STATE.inventario.find(i=>i.id===invId):null;
+  openModal(`
+  <div class="modal modal-lg">
+    <div class="modal-header"><span class="modal-title"><i class="ti ti-server"></i> ${i?'Editar Item':'Novo Item no Inventário'}</span><button class="btn-icon" onclick="closeModal()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="required">Nome do Equipamento</label><input type="text" id="inv-nome" placeholder="Ex: Switch HP 24 portas" value="${i?.nome||''}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label class="required">Categoria</label><select id="inv-cat"><option value="">Selecione...</option>${INV_CATS.map(c=>`<option ${i?.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Tipo/Subtipo</label><input type="text" id="inv-tipo" placeholder="Ex: Switch L2, Laser mono..." value="${i?.tipo||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Marca</label><input type="text" id="inv-marca" value="${i?.marca||''}"/></div>
+        <div class="form-group"><label>Modelo</label><input type="text" id="inv-modelo" value="${i?.modelo||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="required">Nº Patrimônio</label><input type="text" id="inv-pat" placeholder="Ex: NET-001" value="${i?.patrimonio||''}"/></div>
+        <div class="form-group"><label>Nº de Série</label><input type="text" id="inv-serie" value="${i?.serie||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Endereço IP</label><input type="text" id="inv-ip" placeholder="192.168.1.1" value="${i?.ip||''}"/></div>
+        <div class="form-group"><label>Local/Sala</label><input type="text" id="inv-local" value="${i?.local||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="required">Unidade</label><select id="inv-unidade"><option value="Matriz" ${!i||i.unidade==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${i?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option></select></div>
+        <div class="form-group"><label>Garantia até</label><input type="date" id="inv-garantia" value="${i?.garantia||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Status</label><select id="inv-status"><option value="ativo" ${!i||i.status==='ativo'?'selected':''}>Ativo</option><option value="inativo" ${i?.status==='inativo'?'selected':''}>Inativo</option><option value="manutencao" ${i?.status==='manutencao'?'selected':''}>Manutenção</option></select></div>
+        <div class="form-group"><label>Observações</label><input type="text" id="inv-obs" value="${i?.obs||''}"/></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarInventario(${invId||'null'})"><i class="ti ti-check"></i> Salvar</button>
+    </div>
+  </div>`);
+}
+function editInventario(id){ openModalInventario(id); }
+function salvarInventario(id) {
+  const nome=$('#inv-nome')?.value.trim(), cat=$('#inv-cat')?.value, pat=$('#inv-pat')?.value.trim();
+  if(!nome||!cat||!pat){ toast('Preencha nome, categoria e patrimônio.','error'); return; }
+  const data={ nome, categoria:cat, tipo:$('#inv-tipo')?.value, marca:$('#inv-marca')?.value, modelo:$('#inv-modelo')?.value, patrimonio:pat, serie:$('#inv-serie')?.value, ip:$('#inv-ip')?.value, local:$('#inv-local')?.value, unidade:$('#inv-unidade')?.value||'Matriz', garantia:$('#inv-garantia')?.value, status:$('#inv-status')?.value||'ativo', obs:$('#inv-obs')?.value };
+  if(id){ const i=STATE.inventario.find(i=>i.id===id); if(i){ Object.assign(i,data); fbSave('inventario',i.id,i); } toast('Item atualizado!'); }
+  else { const ni={id:STATE.nextId.inventario++,...data}; STATE.inventario.push(ni); fbSave('inventario',ni.id,ni); toast('Item adicionado ao inventário!'); }
+  closeModal(); saveState(); renderPage('inventario');
+}
+function deleteInventario(id){ if(!confirm('Excluir este item?')) return; fbDelete('inventario',id); STATE.inventario=STATE.inventario.filter(i=>i.id!==id); saveState(); renderPage('inventario'); toast('Item excluído.','info'); }
+// ===== MODALS: LICENÇA =====
+function openModalLicenca(licId=null) {
+  const l=licId?STATE.licencas.find(l=>l.id===licId):null;
+  openModal(`
+  <div class="modal modal-lg">
+    <div class="modal-header"><span class="modal-title"><i class="ti ti-license"></i> ${l?'Editar Licença':'Nova Licença'}</span><button class="btn-icon" onclick="closeModal()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="required">Nome do Software</label><input type="text" id="lic-nome" placeholder="Ex: Microsoft 365 Education" value="${l?.nome||''}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label class="required">Fornecedor</label><input type="text" id="lic-forn" value="${l?.fornecedor||''}"/></div>
+        <div class="form-group"><label>Tipo</label><select id="lic-tipo">${['SaaS','Desktop','OEM','Subscrição','Perpétua','Outro'].map(t=>`<option ${l?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Quantidade de Licenças</label><input type="number" id="lic-qtd" min="1" value="${l?.quantidade||1}"/></div>
+        <div class="form-group"><label>Valor (R$)</label><input type="number" id="lic-valor" min="0" step="0.01" value="${l?.valor||0}"/></div>
+      </div>
+      <div class="form-group"><label>Chave / Código de Licença</label><input type="text" id="lic-chave" placeholder="XXXXX-XXXXX-XXXXX" value="${l?.chave||''}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Data de Compra</label><input type="date" id="lic-compra" value="${l?.dataCompra||dateNow()}"/></div>
+        <div class="form-group"><label class="required">Data de Vencimento</label><input type="date" id="lic-venc" value="${l?.vencimento||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Unidade</label><select id="lic-unidade"><option value="Matriz" ${!l||l.unidade==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${l?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option></select></div>
+        <div class="form-group"><label>Status</label><select id="lic-status"><option value="ativo" ${!l||l.status==='ativo'?'selected':''}>Ativo</option><option value="vencendo" ${l?.status==='vencendo'?'selected':''}>A Vencer</option><option value="expirado" ${l?.status==='expirado'?'selected':''}>Expirado</option></select></div>
+      </div>
+      <div class="form-group"><label>Observações</label><textarea id="lic-obs">${l?.obs||''}</textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarLicenca(${licId||'null'})"><i class="ti ti-check"></i> Salvar</button>
+    </div>
+  </div>`);
+}
+function editLicenca(id){ openModalLicenca(id); }
+function salvarLicenca(id) {
+  const nome=$('#lic-nome')?.value.trim(), forn=$('#lic-forn')?.value.trim(), venc=$('#lic-venc')?.value;
+  if(!nome||!forn||!venc){ toast('Preencha nome, fornecedor e vencimento.','error'); return; }
+  const data={ nome, fornecedor:forn, tipo:$('#lic-tipo')?.value, quantidade:parseInt($('#lic-qtd')?.value)||1, valor:parseFloat($('#lic-valor')?.value)||0, chave:$('#lic-chave')?.value, dataCompra:$('#lic-compra')?.value, vencimento:venc, unidade:$('#lic-unidade')?.value||'Matriz', status:$('#lic-status')?.value||'ativo', obs:$('#lic-obs')?.value };
+  const dias=diasParaVencer(venc); if(dias<=30&&dias>0) data.status='vencendo'; if(dias<=0) data.status='expirado';
+  if(id){ const l=STATE.licencas.find(l=>l.id===id); if(l){ Object.assign(l,data); fbSave('licencas',l.id,l); } toast('Licença atualizada!'); }
+  else { const nl={id:STATE.nextId.licenca++,...data}; STATE.licencas.push(nl); fbSave('licencas',nl.id,nl); toast('Licença cadastrada!'); }
+  closeModal(); saveState(); renderPage('licencas');
+}
+function deleteLicenca(id){ if(!confirm('Excluir esta licença?')) return; fbDelete('licencas',id); STATE.licencas=STATE.licencas.filter(l=>l.id!==id); saveState(); renderPage('licencas'); toast('Licença excluída.','info'); }
+// ===== MODALS: EQUIPAMENTO =====
+function openModalEquipamento(unidadeFixa=null, equipId=null) {
+  const e=equipId?STATE.equipamentos.find(e=>e.id===equipId):null;
+  openModal(`
+  <div class="modal modal-lg">
+    <div class="modal-header"><span class="modal-title"><i class="ti ti-device-laptop"></i> ${e?'Editar Equipamento':'Novo Equipamento'}</span><button class="btn-icon" onclick="closeModal()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="required">Nome do Equipamento</label><input type="text" id="eq-nome" value="${e?.nome||''}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label class="required">Tipo</label><select id="eq-tipo">${['Apresentador', 'Caixa de Som', 'Controle Projetor', 'Câmera', 'Filmadora', 'Impressora', 'Microfone', 'Monitor', 'Mouse', 'Notebook', 'Projetor', 'Rádio Comunicador Motorola', 'Tablet', 'Teclado', 'WebCam', 'iPad', 'Roteador', 'Switch', 'Outro'].map(t=>`<option ${e?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="required">Nº Patrimônio</label><input type="text" id="eq-pat" value="${e?.patrimonio||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Marca</label><input type="text" id="eq-marca" value="${e?.marca||''}"/></div>
+        <div class="form-group"><label>Modelo</label><input type="text" id="eq-modelo" value="${e?.modelo||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Nº de Série</label><input type="text" id="eq-serie" value="${e?.serie||''}"/></div>
+        <div class="form-group"><label>Local/Sala</label><input type="text" id="eq-local" value="${e?.local||''}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="required">Unidade</label><select id="eq-unidade"><option value="Matriz" ${!e&&unidadeFixa!=='Ensino Médio'?'selected':e?.unidade==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${unidadeFixa==='Ensino Médio'||e?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option></select></div>
+        <div class="form-group"><label>Status</label><select id="eq-status">${['disponivel','reservado','manutencao','inativo'].map(s=>`<option value="${s}" ${e?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Quantidade</label>
+          <div class="qty-control">
+            <button class="qty-btn" type="button" onclick="changeQtyEq(-1)">−</button>
+            <input class="qty-value" type="number" id="eq-qtd" value="${e?.quantidade||1}" min="1" max="999"/>
+            <button class="qty-btn" type="button" onclick="changeQtyEq(1)">+</button>
+          </div>
+        </div>
+        <div class="form-group"><label>Descrição / Especificações</label><input type="text" id="eq-desc" value="${e?.descricao||''}"/></div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="eq-add-inv" ${!e?'checked':''} style="width:16px;height:16px;accent-color:var(--primary)">
+          <span>Adicionar automaticamente ao <strong>Inventário TI</strong></span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarEquipamento(${equipId||'null'})"><i class="ti ti-check"></i> Salvar</button>
+    </div>
+  </div>`);
+}
+function editEquipamento(id){ openModalEquipamento(null, id); }
+function changeQtyEq(d){ const i=$('#eq-qtd'); if(i) i.value=Math.max(1,Math.min(999,parseInt(i.value)+d)); }
+function salvarEquipamento(id) {
+  const nome=$('#eq-nome')?.value.trim(), tipo=$('#eq-tipo')?.value, pat=$('#eq-pat')?.value.trim();
+  if(!nome||!tipo||!pat){ toast('Preencha nome, tipo e patrimônio.','error'); return; }
+  const qtd=parseInt($('#eq-qtd')?.value)||1;
+  const addInv=$('#eq-add-inv')?.checked;
+  const data={ nome, tipo, patrimonio:pat, marca:$('#eq-marca')?.value||'', modelo:$('#eq-modelo')?.value||'', serie:$('#eq-serie')?.value||'', local:$('#eq-local')?.value||'', unidade:$('#eq-unidade')?.value||'Matriz', status:$('#eq-status')?.value||'disponivel', descricao:$('#eq-desc')?.value||'', quantidade:qtd };
+  if(id){
+    const e=STATE.equipamentos.find(e=>e.id===id); if(e) Object.assign(e,data);
+    const inv=STATE.inventario.find(i=>i.patrimonio===pat);
+    if(inv) { Object.assign(inv,{ nome, marca:data.marca, modelo:data.modelo, serie:data.serie, local:data.local, unidade:data.unidade, status:data.status==='disponivel'?'ativo':data.status, quantidade:qtd }); fbSave('inventario',inv.id,inv); }
+    else if(addInv){
+      const ni={ id:STATE.nextId.inventario++, nome, categoria:tipo, tipo, marca:data.marca, modelo:data.modelo, patrimonio:pat, serie:data.serie, ip:'', local:data.local, unidade:data.unidade, garantia:'', status:'ativo', obs:data.descricao, quantidade:qtd };
+      STATE.inventario.push(ni); fbSave('inventario',ni.id,ni);
+    }
+    toast(inv?'Equipamento atualizado!':'Equipamento atualizado e adicionado ao Inventário!');
+  } else {
+    STATE.equipamentos.push({id:STATE.nextId.equipamento++,...data});
+    if(addInv){
+      const ni={ id:STATE.nextId.inventario++, nome, categoria:tipo, tipo, marca:data.marca, modelo:data.modelo, patrimonio:pat, serie:data.serie, ip:'', local:data.local, unidade:data.unidade, garantia:'', status:'ativo', obs:data.descricao, quantidade:qtd };
+      STATE.inventario.push(ni); fbSave('inventario',ni.id,ni);
+      toast('Equipamento cadastrado e adicionado ao Inventário!');
+    } else {
+      toast('Equipamento cadastrado!');
+    }
+  }
+  closeModal(); saveState(); renderPage(STATE.currentPage);
+}
+function deleteEquipamento(id){ if(!confirm('Excluir este equipamento?')) return; fbDelete('equipamentos',id); STATE.equipamentos=STATE.equipamentos.filter(e=>e.id!==id); saveState(); renderPage(STATE.currentPage); toast('Excluído.','info'); }
+// ===== MODALS: USUÁRIO =====
+function openModalUsuario(userId=null) {
+  const u=userId?STATE.users.find(u=>u.id===userId):null;
+  openModal(`
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title"><i class="ti ti-user-plus"></i> ${u?'Editar Usuário':'Novo Usuário'}</span><button class="btn-icon" onclick="closeModal()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="required">Nome Completo</label><input type="text" id="usr-nome" value="${u?.nome||''}"/></div>
+      <div class="form-group"><label class="required">E-mail</label><input type="email" id="usr-email" value="${u?.email||''}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label class="required">Nome de Usuário</label><input type="text" id="usr-login" placeholder="sem espaços" value="${u?.usuario||''}"/></div>
+        <div class="form-group"><label class="required">Senha</label><input type="password" id="usr-senha" placeholder="${u?'Deixe em branco para manter':'Mínimo 6 caracteres'}" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Perfil</label><select id="usr-role"><option value="usuario" ${!u||u.role==='usuario'?'selected':''}>Usuário</option><option value="admin" ${u?.role==='admin'?'selected':''}>Administrador</option></select></div>
+        <div class="form-group"><label>Unidade</label><select id="usr-unidade"><option value="Matriz" ${!u||u.unidade==='Matriz'?'selected':''}>Matriz</option><option value="Ensino Médio" ${u?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option></select></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarUsuario(${userId||'null'})"><i class="ti ti-check"></i> Salvar</button>
+    </div>
+  </div>`);
+}
+function editUsuario(id){ openModalUsuario(id); }
+async function salvarUsuario(id) {
+  const nome=$('#usr-nome')?.value.trim(), email=$('#usr-email')?.value.trim(), login=$('#usr-login')?.value.trim(), senha=$('#usr-senha')?.value, role=$('#usr-role')?.value, unidade=$('#usr-unidade')?.value||'Matriz';
+  if(!nome||!email||!login){ toast('Preencha nome, e-mail e usuário.','error'); return; }
+  if(!id&&!senha){ toast('Defina uma senha.','error'); return; }
+  if(senha&&senha.length<6){ toast('Senha mínimo 6 caracteres.','error'); return; }
+  if(id){ const u=STATE.users.find(u=>u.id===id); if(u){ Object.assign(u,{nome,email,usuario:login,role,unidade}); if(senha){ u.senha=senha.length===64&&/^[0-9a-f]+$/.test(senha)?senha:await hashSenha(senha); } fbSave('users',u.id,u); } toast('Usuário atualizado!'); }
+  else {
+    if(STATE.users.find(u=>u.usuario===login||u.email===email)){ toast('Usuário ou e-mail já existe.','error'); return; }
+    const senhaHash = senha.length===64&&/^[0-9a-f]+$/.test(senha)?senha:await hashSenha(senha);
+    const nu={id:STATE.nextId.usuario++,nome,email,usuario:login,senha:senhaHash,role,status:'ativo',unidade,criado:dateNow()};
+    STATE.users.push(nu); fbSave('users',nu.id,nu);
+    addNotification('Novo usuário cadastrado',nome,'ti-user-plus'); toast('Usuário criado!');
+  }
+  closeModal(); saveState(); renderPage('usuarios');
+}
+function deleteUsuario(id){ if(id===STATE.currentUser.id){ toast('Não pode excluir seu próprio usuário.','error'); return; } if(!confirm('Excluir usuário?')) return; fbDelete('users',id); STATE.users=STATE.users.filter(u=>u.id!==id); saveState(); renderPage('usuarios'); toast('Usuário excluído.','info'); }
+async function toggleUserStatus(id){ const u=STATE.users.find(u=>u.id===id); if(!u) return; u.status=u.status==='ativo'?'suspenso':'ativo'; const fbResult = await fbSave('users',u.id,u); if(fbResult === true){ toast(`Usuário ${u.status}.`,'info'); } else if(fbResult === false){ toast('Status do usuário atualizado localmente.','info'); } renderPage('usuarios'); }
+// ===== STATUS CHANGERS =====
+async function changeReservaStatus(id, status){ const r=STATE.reservas.find(r=>r.id===id); if(r){ r.status=status; const fbResult = await fbSave('reservas',r.id,r); if(fbResult === true){ toast(`Reserva ${status}!`); } else if(fbResult === false){ toast('Reserva atualizada localmente.','info'); } } saveState(); }
+async function changeChamadoStatus(id, status){ const c=STATE.chamados.find(c=>c.id===id); if(c){ c.status=status; c.atualizado=dateNow(); const fbResult = await fbSave('chamados',c.id,c); if(fbResult === true){ toast(`Chamado ${status}!`); } else if(fbResult === false){ toast('Chamado atualizado localmente.','info'); } } }
+function deleteReserva(id){ if(!confirm('Excluir reserva?')) return; fbDelete('reservas',id); STATE.reservas=STATE.reservas.filter(r=>r.id!==id); saveState(); renderPage(STATE.currentPage); toast('Reserva excluída.','info'); }
+function deleteChamado(id){ if(!confirm('Excluir chamado?')) return; fbDelete('chamados',id); STATE.chamados=STATE.chamados.filter(c=>c.id!==id); saveState(); renderPage(STATE.currentPage); toast('Chamado excluído.','info'); }
+// ===== ACTIONS DROPDOWN =====
+function toggleMenu(btn) {
+  $$('.actions-dropdown').forEach(d=>{ if(d!==btn.nextElementSibling){ d.style.display='none'; d.removeAttribute('data-open'); } });
+  const m=btn.nextElementSibling;
+  const isOpen = m.style.display!=='none';
+  if(isOpen){ m.style.display='none'; return; }
+  m.style.display='block';
+  m.style.position='fixed';
+  m.style.zIndex='9999';
+  // Posicionar abaixo do botão
+  const rect=btn.getBoundingClientRect();
+  const mW=200;
+  let left=rect.right-mW;
+  let top=rect.bottom+4;
+  // Verificar se sai da tela pela direita
+  if(left<8) left=8;
+  // Verificar se sai pela parte inferior
+  if(top+200>window.innerHeight) top=rect.top-204;
+  m.style.left=left+'px';
+  m.style.top=top+'px';
+  m.style.right='auto';
+  m.style.minWidth=mW+'px';
+  setTimeout(()=>document.addEventListener('click',()=>{ m.style.display='none'; },{ once:true }),10);
+}
+// ===== NAV GROUP TOGGLE =====
+function toggleNavGroup(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  const btn = el.previousElementSibling;
+  if (btn) {
+    const chevron = btn.querySelector('.nav-chevron');
+    if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+  }
+}
+// ===== PAGINA UNIDADE (filtrada por unidade) =====
+function paginaUnidade(tipo, unidade) {
+  const uni = unidade;
+  const uSlug = unidade === 'Matriz' ? 'mz' : 'em';
+  if (tipo === 'reservas') {
+    const list = STATE.reservas.filter(r=>(r.unidade||'Matriz')===uni && r.status!=='fechado'&&r.status!=='cancelado');
+    return `
+    <div class="filter-bar">
+      <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar reserva..." id="search-uni-res"/></div>
+      <select class="filter-select" id="filter-uni-res-st"><option value="">Todos</option><option value="ativo">Ativo</option><option value="suspenso">Suspenso</option></select>
+      <button class="btn btn-primary" onclick="openModalReservaUnidade('${uni}')"><i class="ti ti-plus"></i> Nova Reserva</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-calendar-event"></i> Reservas — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>Equipamento</th><th>Solicitante</th><th>Cargo</th><th>Sala</th><th>Data</th><th>Horário</th><th>Qtd</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody>${renderReservasRows(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'chamados') {
+    const list = STATE.chamados.filter(c=>(c.unidade||'Matriz')===uni && c.status!=='fechado'&&c.status!=='cancelado');
+    return `
+    <div class="filter-bar">
+      <button class="btn btn-primary" onclick="openModalChamadoUnidade('${uni}')"><i class="ti ti-plus"></i> Novo Chamado</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-headset"></i> Chamados — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>#</th><th>Título</th><th>Categoria</th><th>Prioridade</th><th>Solicitante</th><th>Status</th><th>Criado</th><th>Ações</th></tr></thead>
+      <tbody>${renderChamadosRows(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'equipamentos') {
+    const list = STATE.equipamentos.filter(e=>e.unidade===uni);
+    return `
+    <div class="filter-bar">
+      <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar equipamento..." id="search-uni-eq"/></div>
+      <button class="btn btn-primary" onclick="openModalEquipamento('${uni}')"><i class="ti ti-plus"></i> Novo Equipamento</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-devices"></i> Equipamentos — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Patrimônio</th><th>Quantidade</th><th>Local</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody id="uni-eq-tbody">${renderUnidadeEquipsQtd(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'licencas') {
+    const list = STATE.licencas.filter(l=>l.unidade===uni);
+    return `
+    <div class="filter-bar">
+      <button class="btn btn-primary" onclick="openModalLicenca()"><i class="ti ti-plus"></i> Nova Licença</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-license"></i> Licenças — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>Software</th><th>Fornecedor</th><th>Qtd</th><th>Vencimento</th><th>Dias Restantes</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody>${renderLicRows(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'usuarios') {
+    const list = STATE.users.filter(u=>u.unidade===uni);
+    return `
+    <div class="filter-bar">
+      <button class="btn btn-primary" onclick="openModalUsuario()"><i class="ti ti-user-plus"></i> Novo Usuário</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-users"></i> Usuários — ${uni} (${list.length})</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>Usuário</th><th>E-mail</th><th>Login</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody>${renderUserRows(list)}</tbody></table></div>
+    </div>`;
+  }
+  if (tipo === 'relatorios') {
+    return `
+    <div class="grid-2 mb-20">
+      <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-line"></i> Chamados por Mês — ${uni}</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-uni-mensal"></canvas></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title"><i class="ti ti-chart-pie"></i> Chamados por Prioridade</span></div><div class="card-body"><div class="chart-container"><canvas id="chart-uni-prio"></canvas></div></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-table"></i> Chamados — ${uni}</span></div>
+      <div class="table-wrapper"><table><thead><tr><th>#</th><th>Título</th><th>Categoria</th><th>Prioridade</th><th>Solicitante</th><th>Status</th><th>Criado</th></tr></thead>
+      <tbody>${STATE.chamados.filter(c=>c.unidade===uni).map(c=>`<tr><td>#${c.id}</td><td>${c.titulo}</td><td>${c.categoria}</td><td><span style="color:${prioColor(c.prioridade)};font-weight:700">${c.prioridade}</span></td><td>${c.solicitante}</td><td><span class="badge badge-${c.status}">${c.status}</span></td><td>${formatDate(c.criado)}</td></tr>`).join('')}</tbody></table></div>
+    </div>`;
+  }
+  return '<p>Seção em desenvolvimento.</p>';
+}
+function renderUnidadeEquipsQtd(list) {
+  if(!list.length) return '<tr><td colspan="7"><div class="empty-state"><i class="ti ti-devices-off"></i><h3>Nenhum equipamento</h3></div></td></tr>';
+  return list.map(e=>`<tr>
+    <td><strong>${e.nome}</strong></td><td>${e.tipo}</td>
+    <td><code style="background:var(--gray-100);padding:2px 6px;border-radius:4px;font-size:12px">${e.patrimonio}</code></td>
+    <td><span class="badge badge-reservado" style="font-size:13px">${e.quantidade||1}</span></td>
+    <td>${e.local||'—'}</td>
+    <td>${equipStatus(e.status)}</td>
+    <td><div style="display:flex;gap:4px">
+      <button class="btn-icon" onclick="editEquipamento(${e.id})" title="Editar"><i class="ti ti-edit"></i></button>
+      <button class="btn-icon" onclick="deleteEquipamento(${e.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+    </div></td>
+  </tr>`).join('');
+}
+function attachUnidadeEquipFilter(unidade) {
+  const s=$('#search-uni-eq');
+  if(s) s.addEventListener('input',()=>{
+    const q=s.value.toLowerCase();
+    const f=STATE.equipamentos.filter(e=>e.unidade===unidade&&(!q||e.nome.toLowerCase().includes(q)));
+    const tb=$('#uni-eq-tbody'); if(tb) tb.innerHTML=renderUnidadeEquipsQtd(f);
+  });
+}
+function renderUnidadeCharts(unidade) {
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const ctx1=document.getElementById('chart-uni-mensal');
+  if(ctx1) new Chart(ctx1,{type:'bar',data:{labels:meses,datasets:[{label:'Chamados',data:meses.map(()=>Math.floor(Math.random()*5)+1),backgroundColor:'#0073c8',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  const ctx2=document.getElementById('chart-uni-prio');
+  const ch=STATE.chamados.filter(c=>c.unidade===unidade);
+  if(ctx2) new Chart(ctx2,{type:'doughnut',data:{labels:['Alta','Média','Baixa'],datasets:[{data:[ch.filter(c=>c.prioridade==='Alta').length,ch.filter(c=>c.prioridade==='Media').length,ch.filter(c=>c.prioridade==='Baixa').length],backgroundColor:['#e74c3c','#e67e22','#27ae60'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+}
+function openModalReservaUnidade(unidade) { openModalReserva(null, null, unidade); }
+function openModalChamadoUnidade(unidade) { openModalChamado(null, unidade); }
+// ===== ACOMPANHAMENTOS DE CHAMADO =====
+function openModalAcompanhamento(chamadoId) {
+  const c = STATE.chamados.find(c => c.id === chamadoId);
+  if (!c) return;
+  const lista = STATE.acompanhamentos.filter(a => a.chamadoId === chamadoId).sort((a,b)=>b.id-a.id);
+  const isAdmin = STATE.currentUser.role === 'admin';
+  openModal(`
+  <div class="modal modal-lg" style="max-width:680px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white">
+        <i class="ti ti-message-circle" style="color:var(--primary-mid)"></i>
+        Chamado #${c.id} — ${c.titulo}
+      </span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <!-- DETALHES DO CHAMADO -->
+    <div style="padding:16px 24px;background:var(--gray-50);border-bottom:1px solid var(--gray-200)">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:12px">
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Status</span><br>
+          <span class="badge badge-${c.status}" style="margin-top:4px;display:inline-flex">${c.status}</span></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Prioridade</span><br>
+          <strong style="color:${prioColor(c.prioridade)}">${c.prioridade}</strong></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Categoria</span><br>
+          <strong>${c.categoria}</strong></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Solicitante</span><br>
+          <strong>${c.solicitante}</strong></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Atribuído</span><br>
+          <strong>${c.atribuido||'—'}</strong></div>
+        <div><span style="color:var(--gray-400);font-weight:600;text-transform:uppercase;font-size:10px">Unidade</span><br>
+          <strong>${c.unidade||'Matriz'}</strong></div>
+      </div>
+      <div style="margin-top:10px;padding:10px 12px;background:white;border-radius:6px;border:1px solid var(--gray-200);font-size:13px;color:var(--gray-600);line-height:1.5">
+        <strong style="font-size:11px;color:var(--gray-400);text-transform:uppercase">Descrição:</strong><br>${c.descricao}
+      </div>
+    </div>
+    <!-- TIMELINE DE ACOMPANHAMENTOS -->
+    <div class="modal-body" style="padding:20px 24px;max-height:320px;overflow-y:auto" id="acomp-lista">
+      ${lista.length === 0
+        ? `<div style="text-align:center;padding:30px;color:var(--gray-400)">
+            <i class="ti ti-message-off" style="font-size:36px;display:block;margin-bottom:8px"></i>
+            <p style="font-size:13px">Nenhum acompanhamento ainda.<br>Adicione o primeiro abaixo.</p>
+           </div>`
+        : lista.map(a => `
+          <div class="acomp-item acomp-${a.tipo}">
+            <div class="acomp-avatar">${initials(a.autor)}</div>
+            <div class="acomp-body">
+              <div class="acomp-header">
+                <strong>${a.autor}</strong>
+                <span class="acomp-tipo-badge acomp-tipo-${a.tipo}">${{observacao:'Observação',solucao:'Solução',pendencia:'Pendência',retorno:'Retorno ao usuário'}[a.tipo]||a.tipo}</span>
+                <span style="margin-left:auto;font-size:11px;color:var(--gray-400)">${formatDate(a.criado)} às ${a.hora}</span>
+              </div>
+              <div class="acomp-texto">${a.texto.replace(/\n/g,'<br>')}</div>
+            </div>
+          </div>`).join('')}
+    </div>
+    <!-- FORMULÁRIO DE NOVO ACOMPANHAMENTO -->
+    <div style="padding:16px 24px;border-top:2px solid var(--gray-200);background:white">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Tipo de interação</label>
+          <select id="acomp-tipo" style="width:100%;padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;outline:none">
+            <option value="observacao">💬 Observação</option>
+            <option value="solucao">✅ Solução / Resolução</option>
+            <option value="pendencia">⏳ Pendência</option>
+            <option value="retorno">📢 Retorno ao usuário</option>
+          </select>
+        </div>
+        ${isAdmin ? `<div>
+          <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Alterar status do chamado</label>
+          <select id="acomp-status" style="width:100%;padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;outline:none">
+            <option value="">— Manter status atual —</option>
+            <option value="aberto">Aberto</option>
+            <option value="andamento">Em Andamento</option>
+            <option value="pendente">Pendente</option>
+            <option value="suspenso">Suspenso</option>
+            <option value="fechado">Fechado / Resolvido</option>
+          </select>
+        </div>` : '<div></div>'}
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;display:block;margin-bottom:4px">Mensagem <span style="color:var(--danger)">*</span></label>
+        <textarea id="acomp-texto" rows="3" placeholder="Descreva a interação, solução aplicada, pendência encontrada..." style="width:100%;padding:10px 12px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;resize:vertical;outline:none;transition:.15s" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--gray-200)'"></textarea>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+        <span style="font-size:12px;color:var(--gray-400)"><i class="ti ti-user" style="font-size:13px"></i> ${STATE.currentUser.nome}</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+          <button class="btn btn-primary" onclick="salvarAcompanhamento(${chamadoId})">
+            <i class="ti ti-send"></i> Registrar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>`);
+}
+function salvarAcompanhamento(chamadoId) {
+  const texto = $('#acomp-texto')?.value.trim();
+  const tipo  = $('#acomp-tipo')?.value || 'observacao';
+  const novoStatus = $('#acomp-status')?.value || '';
+  if (!texto) { toast('Digite a mensagem do acompanhamento.', 'error'); return; }
+  const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const novoAcomp = {
+    id: STATE.nextId.acompanhamento++,
+    chamadoId,
+    texto,
+    tipo,
+    autor: STATE.currentUser.nome,
+    criado: dateNow(),
+    hora,
+  };
+  STATE.acompanhamentos.push(novoAcomp);
+  fbSave('acompanhamentos', novoAcomp.id, novoAcomp);
+  // Alterar status se solicitado
+  if (novoStatus) {
+    const c = STATE.chamados.find(c => c.id === chamadoId);
+    if (c) { c.status = novoStatus; c.atualizado = dateNow(); fbSave('chamados',c.id,c); }
+  }
+  saveState();
+  addNotification(`Acompanhamento #${chamadoId}`, `${STATE.currentUser.nome}: ${texto.slice(0,40)}...`, 'ti-message-circle');
+  toast('Acompanhamento registrado!');
+  // Fechar modal e atualizar a página
+  closeModal();
+  renderPage(STATE.currentPage);
+}
+function gerarDatasRecorrentes(dataBase, tipo) {
+  const datas = [dataBase];
+  if (!tipo) return datas;
+  const d = new Date(dataBase + 'T12:00:00');
+  if (tipo === 'semanal') {
+    for (let i = 1; i < 4; i++) { d.setDate(d.getDate() + 7); datas.push(d.toISOString().split('T')[0]); }
+  } else if (tipo === 'quinzenal') {
+    for (let i = 1; i < 2; i++) { d.setDate(d.getDate() + 14); datas.push(d.toISOString().split('T')[0]); }
+  } else if (tipo === 'diario') {
+    let count = 0;
+    while (count < 4) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) { datas.push(d.toISOString().split('T')[0]); count++; }
+    }
+  }
+  return datas;
+}
+// ===== EXPORTAR DADOS =====
+function exportarCSV(dados, nomeArquivo) {
+  if (!dados || !dados.length) { toast('Nenhum dado para exportar.', 'warning'); return; }
+  const cols = Object.keys(dados[0]).filter(k => !k.startsWith('_'));
+  const header = cols.join(';');
+  const rows = dados.map(row => cols.map(c => {
+    const v = row[c] ?? '';
+    return `"${String(v).replace(/"/g, '""')}"`;
+  }).join(';'));
+  const csv = '﻿' + header + '\n' + rows.join('\n'); // BOM para Excel
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nomeArquivo + '.csv'; a.click();
+  URL.revokeObjectURL(url);
+  toast('Arquivo CSV exportado! Abra no Excel.', 'success');
+}
+function toggleExportMenu() {
+  const m = document.getElementById('export-menu');
+  if (!m) return;
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+  if (m.style.display !== 'none') {
+    setTimeout(() => document.addEventListener('click', function h(e) {
+      if (!document.getElementById('export-wrap')?.contains(e.target)) { m.style.display='none'; document.removeEventListener('click',h); }
+    }), 10);
+  }
+}
+function exportarGeral() {
+  const chamados = STATE.chamados.map(c=>({tipo:'Chamado', id:c.id, titulo:c.titulo, categoria:c.categoria, prioridade:c.prioridade, solicitante:c.solicitante, unidade:c.unidade||'Matriz', status:c.status, data:c.criado}));
+  const reservas = sortByDate(STATE.reservas).map(r=>({tipo:'Reserva', id:r.id, titulo:r.equipamento, categoria:r.equipamentoTipo, prioridade:'—', solicitante:r.solicitante, unidade:r.unidade||'Matriz', status:r.status, data:r.dataInicio}));
+  exportarCSV([...chamados, ...reservas], 'geral-miro');
+}
+function exportarReservas() { exportarCSV(sortByDate(STATE.reservas), 'reservas-miro'); }
+function exportarChamados() { exportarCSV(STATE.chamados, 'chamados-miro'); }
+function exportarInventario() { exportarCSV(STATE.inventario, 'inventario-miro'); }
+function exportarLicencas() { exportarCSV(STATE.licencas, 'licencas-miro'); }
+function exportarEquipamentos() { exportarCSV(STATE.equipamentos, 'equipamentos-miro'); }
+function exportarUsuariosCSV() {
+  const dados = STATE.users.map(u => ({ Nome: u.nome, 'Nome de usuário': u.usuario, 'E-mail': u.email, Perfil: u.role, Unidade: u.unidade||'', Status: u.status }));
+  exportarCSV(dados, 'usuarios-miro');
+}
+// ===== IMPORTAÇÃO GENÉRICA CSV =====
+const IMPORT_CONFIG = {
+  usuarios: {
+    titulo: 'Importar Usuários',
+    icone: 'ti-user-plus',
+    cols: ['Nome','Nome de usuário','E-mail','Senha','Perfil','Unidade'],
+    required: ['Nome','Nome de usuário','E-mail'],
+    estadoKey: 'users',
+    duplicateCheck: (row, existing) => existing.find(u => u.usuario === (row['nome de usuario']||row.login) || u.email === row['e-mail']),
+    mapRow: (row, id, hash) => ({
+      id, nome: row.nome||row.name||'', email: row['e-mail']||'', usuario: row['nome de usuario']||row.login||'',
+      senha: hash, role: row.perfil === 'administrador' ? 'admin' : 'usuario',
+      status: 'ativo', unidade: row.unidade || 'Matriz', criado: dateNow()
+    }),
+    nextIdKey: 'usuario',
+    fbCol: 'users',
+    toastMsg: (n, d) => `Importação de usuários concluída! ${n} criados, ${d} duplicados ignorados.`,
+  },
+  equipamentos: {
+    titulo: 'Importar Equipamentos',
+    icone: 'ti-device-laptop',
+    cols: ['Nome','Tipo','Patrimônio','Marca','Modelo','Série','Local','Unidade','Status','Quantidade','Descrição'],
+    required: ['Nome','Tipo','Patrimônio'],
+    estadoKey: 'equipamentos',
+    duplicateCheck: (row, existing) => existing.find(e => e.patrimonio === row.patrimonio),
+    mapRow: (row, id) => ({
+      id, nome: row.nome||'', tipo: row.tipo||'', patrimonio: row.patrimonio||'',
+      marca: row.marca||'', modelo: row.modelo||'', serie: row.serie||'',
+      local: row.local||'', unidade: row.unidade||'Matriz',
+      status: row.status||'disponivel', quantidade: parseInt(row.quantidade)||1,
+      descricao: row.descricao||''
+    }),
+    nextIdKey: 'equipamento',
+    fbCol: 'equipamentos',
+    toastMsg: (n, d) => `Importação de equipamentos concluída! ${n} criados, ${d} duplicados ignorados.`,
+  },
+  inventario: {
+    titulo: 'Importar Inventário',
+    icone: 'ti-server',
+    cols: ['Nome','Categoria','Tipo','Marca','Modelo','Patrimônio','Série','IP','Local','Unidade','Garantia','Status','Quantidade','Observação'],
+    required: ['Nome','Patrimônio'],
+    estadoKey: 'inventario',
+    duplicateCheck: (row, existing) => existing.find(i => i.patrimonio === row.patrimonio),
+    mapRow: (row, id) => ({
+      id, nome: row.nome||'', categoria: row.categoria||row.tipo||'', tipo: row.tipo||'',
+      marca: row.marca||'', modelo: row.modelo||'', patrimonio: row.patrimonio||'',
+      serie: row.serie||'', ip: row.ip||'', local: row.local||'',
+      unidade: row.unidade||'Matriz', garantia: row.garantia||'',
+      status: row.status||'ativo', quantidade: parseInt(row.quantidade)||1,
+      obs: row.obs||row.observacao||''
+    }),
+    nextIdKey: 'inventario',
+    fbCol: 'inventario',
+    toastMsg: (n, d) => `Importação de inventário concluída! ${n} criados, ${d} duplicados ignorados.`,
+  }
+};
+let _importData = null;
+let _importTipo = null;
+function baixarTemplateCSV(tipo) {
+  const cfg = IMPORT_CONFIG[tipo];
+  if (!cfg) return;
+  const csv = '﻿' + cfg.cols.join(';') + '\n' + cfg.cols.map(() => '').join(';');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `template-${tipo}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  toast('Template baixado! Preencha no Excel e importe.', 'info');
+}
+function openModalImportacao(tipo) {
+  _importTipo = tipo;
+  _importData = null;
+  const cfg = IMPORT_CONFIG[tipo];
+  openModal(`
+  <div class="modal modal-lg" style="max-width:640px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-${cfg.icone}"></i> ${cfg.titulo}</span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn btn-ghost" onclick="baixarTemplateCSV('${tipo}')" style="flex:1"><i class="ti ti-download"></i> Baixar Template CSV</button>
+      </div>
+      <div id="import-dropzone" style="border:2px dashed var(--gray-300);border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .2s" onclick="document.getElementById('import-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--primary)';this.style.background='var(--blue-bg,#eff6ff)'" ondragleave="this.style.borderColor='var(--gray-300)';this.style.background=''" ondrop="event.preventDefault();this.style.borderColor='var(--gray-300)';this.style.background='';document.getElementById('import-file').files=event.dataTransfer.files;lerCSVImportacao(event.dataTransfer.files[0])">
+        <i class="ti ti-upload" style="font-size:32px;color:var(--gray-400)"></i>
+        <p style="margin:8px 0 4px;font-weight:600;color:var(--gray-700)">Arraste o arquivo CSV aqui</p>
+        <p style="font-size:12px;color:var(--gray-400)">ou clique para selecionar</p>
+      </div>
+      <input type="file" id="import-file" accept=".csv" style="display:none" onchange="lerCSVImportacao(this.files[0])"/>
+      <div id="import-preview" style="margin-top:16px;display:none"></div>
+    </div>
+    <div class="modal-footer" id="import-footer" style="display:none">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="executarImportacao()"><i class="ti ti-check"></i> Importar Novos</button>
+    </div>
+  </div>`);
+}
+function lerCSVImportacao(file) {
+  if (!file) return;
+  const cfg = IMPORT_CONFIG[_importTipo];
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    let text = e.target.result;
+    if (text.charCodeAt(0) === 0xFEFF) text = text.substring(1);
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) { toast('CSV vazio ou sem dados.', 'error'); return; }
+    const headers = lines[0].split(/[,;]/).map(h => h.trim().replace(/^"|"$/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split(/[,;]/).map(v => v.trim().replace(/^"|"$/g, ''));
+      const obj = {};
+      headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
+      rows.push(obj);
+    }
+    const existing = STATE[cfg.estadoKey] || [];
+    const novos = rows.filter(r => !cfg.duplicateCheck(r, existing));
+    const dups = rows.length - novos.length;
+    _importData = { rows, novos, dups, headers };
+    let preview = `<div style="padding:12px;background:var(--gray-50);border-radius:8px;font-size:13px">`;
+    preview += `<div style="display:flex;gap:16px;margin-bottom:12px">`;
+    preview += `<span><strong>${rows.length}</strong> linhas no CSV</span>`;
+    preview += `<span style="color:var(--success)"><strong>${novos.length}</strong> novos</span>`;
+    if (dups > 0) preview += `<span style="color:var(--warning)"><strong>${dups}</strong> duplicados</span>`;
+    preview += `</div>`;
+    if (novos.length > 0) {
+      preview += `<div style="max-height:200px;overflow:auto;border:1px solid var(--gray-200);border-radius:6px">`;
+      preview += `<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr>`;
+      headers.forEach(h => { preview += `<th style="padding:6px 8px;background:var(--gray-100);text-align:left;white-space:nowrap">${h}</th>`; });
+      preview += `</tr></thead><tbody>`;
+      novos.slice(0, 10).forEach(r => {
+        preview += `<tr>`;
+        headers.forEach(h => { preview += `<td style="padding:4px 8px;border-top:1px solid var(--gray-100);white-space:nowrap">${r[h]||''}</td>`; });
+        preview += `</tr>`;
+      });
+      if (novos.length > 10) preview += `<tr><td colspan="${headers.length}" style="padding:6px 8px;text-align:center;color:var(--gray-400)">... mais ${novos.length - 10} linhas</td></tr>`;
+      preview += `</tbody></table></div>`;
+    }
+    preview += `</div>`;
+    document.getElementById('import-preview').innerHTML = preview;
+    document.getElementById('import-preview').style.display = 'block';
+    document.getElementById('import-dropzone').style.display = 'none';
+    document.getElementById('import-footer').style.display = 'flex';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+async function executarImportacao() {
+  if (!_importData || !_importTipo) return;
+  const cfg = IMPORT_CONFIG[_importTipo];
+  const { novos } = _importData;
+  if (novos.length === 0) { toast('Nenhum novo registro para importar.', 'warning'); return; }
+  let hash = null;
+  if (_importTipo === 'usuarios') hash = await hashSenha('miro26');
+  let criados = 0;
+  for (const row of novos) {
+    const id = STATE.nextId[cfg.nextIdKey]++;
+    const obj = cfg.mapRow(row, id, hash);
+    STATE[cfg.estadoKey].push(obj);
+    fbSave(cfg.fbCol, id, obj);
+    criados++;
+  }
+  saveState();
+  closeModal();
+  renderPage(STATE.currentPage);
+  toast(cfg.toastMsg(criados, _importData.dups), 'success');
+}
+function configuracoes() {
+  return `
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-clock"></i> SLA — Tempo de Resposta</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Define o prazo máximo para atendimento de chamados por prioridade.</p>
+        <div class="form-group">
+          <label>🔴 Prioridade Alta (horas)</label>
+          <input type="number" id="sla-alta" value="${STATE.sla.Alta}" min="1" max="72" style="max-width:120px;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:var(--font);font-size:14px"/>
+        </div>
+        <div class="form-group">
+          <label>🟡 Prioridade Média (horas)</label>
+          <input type="number" id="sla-media" value="${STATE.sla.Media}" min="1" max="168" style="max-width:120px;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:var(--font);font-size:14px"/>
+        </div>
+        <div class="form-group">
+          <label>🟢 Prioridade Baixa (horas)</label>
+          <input type="number" id="sla-baixa" value="${STATE.sla.Baixa}" min="1" max="720" style="max-width:120px;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:var(--font);font-size:14px"/>
+        </div>
+        <button class="btn btn-primary" onclick="salvarSLA()"><i class="ti ti-check"></i> Salvar SLA</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-database-export"></i> Exportar Dados</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Baixe os dados do sistema em formato CSV (compatível com Excel).</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-ghost" onclick="exportarReservas()"><i class="ti ti-calendar-event"></i> Exportar Reservas</button>
+          <button class="btn btn-ghost" onclick="exportarChamados()"><i class="ti ti-headset"></i> Exportar Chamados</button>
+          <button class="btn btn-ghost" onclick="exportarInventario()"><i class="ti ti-server"></i> Exportar Inventário</button>
+          <button class="btn btn-ghost" onclick="exportarLicencas()"><i class="ti ti-license"></i> Exportar Licenças</button>
+          <button class="btn btn-ghost" onclick="exportarEquipamentos()"><i class="ti ti-devices"></i> Exportar Equipamentos</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-user-plus"></i> Importar</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Importe novos registros a partir de arquivos CSV. Dados existentes não são substituídos.</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-ghost" onclick="openModalImportacao('usuarios')"><i class="ti ti-user-plus"></i> Usuários</button>
+          <button class="btn btn-ghost" onclick="openModalImportacao('equipamentos')"><i class="ti ti-device-laptop"></i> Equipamentos</button>
+          <button class="btn btn-ghost" onclick="openModalImportacao('inventario')"><i class="ti ti-server"></i> Inventário</button>
+        </div>
+        <div style="margin-top:12px;padding:10px;background:var(--blue-bg,#eff6ff);border-radius:6px;font-size:11px;color:var(--gray-600)">
+          <i class="ti ti-info-circle"></i>
+          <strong>Dica:</strong> Baixe o template CSV primeiro para garantir o formato correto das colunas.
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-shield-lock"></i> Segurança</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Altere sua senha de acesso ao sistema.</p>
+        <div class="form-group">
+          <label>Senha Atual</label>
+          <input type="password" id="senha-atual" placeholder="••••••••"/>
+        </div>
+        <div class="form-group">
+          <label>Nova Senha</label>
+          <input type="password" id="senha-nova" placeholder="Mínimo 6 caracteres"/>
+        </div>
+        <div class="form-group">
+          <label>Confirmar Nova Senha</label>
+          <input type="password" id="senha-conf" placeholder="Repita a nova senha"/>
+        </div>
+        <button class="btn btn-primary" onclick="alterarSenha()"><i class="ti ti-lock"></i> Alterar Senha</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-cloud-upload"></i> Backup & Restauração</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">
+          Faça backup regularmente para não perder dados. O arquivo JSON pode ser restaurado a qualquer momento.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-primary" onclick="exportarBackupJSON()">
+            <i class="ti ti-download"></i> Exportar Backup JSON (todos os dados)
+          </button>
+          <button class="btn btn-ghost" onclick="importarBackupJSON()" style="border-color:var(--warning);color:var(--warning)">
+            <i class="ti ti-upload"></i> Restaurar Backup (importar JSON)
+          </button>
+        </div>
+        <div style="margin-top:12px;padding:10px;background:var(--warning-bg);border-radius:6px;font-size:11px;color:var(--gray-600)">
+          <i class="ti ti-info-circle"></i>
+          <strong>Dica:</strong> Faça backup toda semana e salve em uma pasta no Google Drive ou pendrive. O backup automático também roda a cada 30 minutos enquanto o sistema estiver aberto.
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title"><i class="ti ti-info-circle"></i> Sobre o Sistema</span></div>
+      <div class="card-body">
+        <div style="text-align:center;padding:20px">
+          <img src="logo.png" alt="Escola Miró" style="max-height:70px;object-fit:contain;margin-bottom:16px" onerror="this.style.display='none'">
+          <h3 style="font-size:18px;font-weight:800;color:var(--gray-900)">TI - Escola Miró</h3>
+          <p style="font-size:13px;color:var(--gray-500);margin-top:6px">Sistema de Chamados e Reservas</p>
+          <p style="font-size:13px;color:var(--gray-500)">Versão 8.9 | Firebase Firestore</p>
+          <div style="margin-top:16px;padding:12px;background:var(--primary-light);border-radius:8px">
+            <p style="font-size:12px;color:var(--primary);font-weight:600">Responsável TI: Tiago Souza</p>
+            <p style="font-size:11px;color:var(--gray-500);margin-top:2px">Copyright © 2026 Tiago Souza. Todos os direitos reservados.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+function salvarSLA() {
+  const alta  = parseInt($('#sla-alta')?.value) || 2;
+  const media = parseInt($('#sla-media')?.value) || 8;
+  const baixa = parseInt($('#sla-baixa')?.value) || 24;
+  STATE.sla = { Alta: alta, Media: media, Baixa: baixa };
+  saveState();
+  fbSave('config', 'sla', { sla: STATE.sla });
+  toast('SLA atualizado!');
+}
+async function alterarSenha() {
+  const atual = $('#senha-atual')?.value;
+  const nova  = $('#senha-nova')?.value;
+  const conf  = $('#senha-conf')?.value;
+  if (!atual || !nova || !conf) { toast('Preencha todos os campos.', 'error'); return; }
+  if (nova !== conf) { toast('As senhas novas não coincidem.', 'error'); return; }
+  if (nova.length < 6) { toast('Mínimo 6 caracteres.', 'error'); return; }
+  const u = STATE.currentUser;
+  let okAtual = false;
+  if (u.senha && u.senha.length === 64) {
+    okAtual = await verificarSenha(atual, u.senha);
+  } else {
+    okAtual = u.senha === atual;
+  }
+  if (!okAtual) { toast('Senha atual incorreta.', 'error'); return; }
+  u.senha = await hashSenha(nova);
+  fbSave('users', u.id, u);
+  saveState();
+  toast('Senha alterada com sucesso!');
+  $('#senha-atual').value = '';
+  $('#senha-nova').value = '';
+  $('#senha-conf').value = '';
+}
+// ===== QR CODE =====
+function abrirQRCode(patrimonio, nome) {
+  const texto = encodeURIComponent(patrimonio);
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${texto}`;
+  openModal(`
+  <div class="modal" style="max-width:360px">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ti ti-qrcode"></i> QR Code — ${patrimonio}</span>
+      <button class="btn-icon" onclick="closeModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" style="text-align:center;padding:32px">
+      <img src="${qrUrl}" alt="QR Code" style="width:200px;height:200px;border:8px solid white;box-shadow:var(--shadow-lg);border-radius:8px">
+      <div style="margin-top:16px">
+        <p style="font-size:15px;font-weight:800;color:var(--gray-900)">${nome}</p>
+        <p style="font-size:13px;color:var(--gray-500);margin-top:4px">Patrimônio: <strong>${patrimonio}</strong></p>
+      </div>
+      <div style="margin-top:20px;display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-primary" onclick="imprimirQR()"><i class="ti ti-printer"></i> Imprimir</button>
+        <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+      </div>
+    </div>
+  </div>`);
+}
+function imprimirQR() {
+  const modal = document.querySelector('.modal-body');
+  if (!modal) { toast('Nada para imprimir.','warning'); return; }
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>QR Code — Patrimônio</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Nunito',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:white}
+    .qr-print{text-align:center;padding:20px}
+    .qr-print img{width:200px;height:200px;border:4px solid #333;border-radius:8px}
+    .qr-print .nome{font-size:16px;font-weight:800;margin-top:12px;color:#1e293b}
+    .qr-print .pat{font-size:13px;color:#64748b;margin-top:4px}
+    @media print{body{margin:0;padding:0}}
+    @page{margin:1cm;size:auto}
+  </style></head><body>
+  <div class="qr-print">${modal.innerHTML}</div>
+  </body></html>`;
+  const janela = window.open('','_blank','width=400,height=400');
+  if(!janela){ toast('Permita pop-ups para imprimir.','warning'); return; }
+  janela.document.write(html); janela.document.close();
+  janela.onload=()=>{ setTimeout(()=>{ janela.focus(); janela.print(); },500); };
+}
+// ===== SLA — TEMPO DE RESPOSTA =====
+function calcularSLA(chamado) {
+  if (chamado.status === 'fechado' || chamado.status === 'cancelado') return null;
+  const slaHoras = STATE.sla[chamado.prioridade] || 8;
+  const criado = new Date(chamado.criado + 'T00:00:00');
+  const limite = new Date(criado.getTime() + slaHoras * 3600000);
+  const agora = new Date();
+  const diffMs = limite - agora;
+  const diffH = Math.floor(diffMs / 3600000);
+  const diffM = Math.floor((diffMs % 3600000) / 60000);
+  if (diffMs < 0) return { vencido: true, label: `Vencido há ${Math.abs(diffH)}h`, cor: 'var(--danger)' };
+  if (diffH < 2)  return { vencido: false, label: `${diffH}h ${diffM}min`, cor: 'var(--danger)' };
+  if (diffH < 6)  return { vencido: false, label: `${diffH}h restantes`, cor: 'var(--warning)' };
+  return { vencido: false, label: `${diffH}h restantes`, cor: 'var(--success)' };
+}
+function renderSLABadge(chamado) {
+  const sla = calcularSLA(chamado);
+  if (!sla) return '';
+  return `<span style="font-size:10px;font-weight:700;color:${sla.cor};display:flex;align-items:center;gap:3px;margin-top:2px">
+    <i class="ti ti-clock" style="font-size:11px"></i>${sla.label}
+  </span>`;
+}
+// ===== COMPRAS =====
+const STATUS_COMPRA = ['Solicitado','Em cotação','Aprovado','Pedido realizado','Recebido','Entregue','Cancelado'];
+const PAGAMENTOS_COMPRA = ['Boleto','Cartão','DDA','Dinheiro','Pix'];
+const SETORES_COMPRA = ['Administrativo', 'Biblioteca', 'Coordenação', 'Direção', 'Laboratório', 'Sala de Aula', 'Secretaria', 'TI', 'Outro'];
+const CATS_COMPRA = ['Cabo/Acessório','Cabos','Caixa de Som','Câmera','iPad','Impressora','Material de Consumo','Microfone','Monitor','Mouse','Notebook','Peça de Reposição','Projetor','Roteador','Serviço Técnico','Software/Licença','Switch','Tablet','Teclado','Outro'];
+function comprasPage() {
+  const list = [...STATE.compras].sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
+  const totalGasto = STATE.compras.reduce((a,c)=>a+(c.valorTotal||0),0);
+  const pendentes  = STATE.compras.filter(c=>!['Recebido','Entregue','Cancelado'].includes(c.status)).length;
+  const recebidos  = STATE.compras.filter(c=>c.status==='Recebido').length;
+  return `
+  <div class="stats-grid stats-compras" style="margin-bottom:20px">
+    <div class="stat-card"><div class="stat-icon blue"><i class="ti ti-shopping-cart"></i></div><div class="stat-info"><div class="stat-number">${STATE.compras.length}</div><div class="stat-label">Total de Compras</div></div></div>
+    <div class="stat-card"><div class="stat-icon orange"><i class="ti ti-clock"></i></div><div class="stat-info"><div class="stat-number">${pendentes}</div><div class="stat-label">Em Andamento</div></div></div>
+    <div class="stat-card"><div class="stat-icon green"><i class="ti ti-circle-check"></i></div><div class="stat-info"><div class="stat-number">${recebidos}</div><div class="stat-label">Recebidos</div></div></div>
+    <div class="stat-card"><div class="stat-icon teal"><i class="ti ti-coin"></i></div><div class="stat-info"><div class="stat-number">R$ ${totalGasto.toLocaleString('pt-BR',{minimumFractionDigits:2})}</div><div class="stat-label">Investimento Total</div></div></div>
+  </div>
+  <div class="filter-bar no-print">
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" placeholder="Buscar compra..." id="search-compra" oninput="filtrarCompras()"/></div>
+    <select class="filter-select" id="filter-compra-status" onchange="filtrarCompras()">
+      <option value="">Todos os status</option>
+      ${STATUS_COMPRA.map(s=>`<option value="${s}">${s}</option>`).join('')}
+    </select>
+    <select class="filter-select" id="filter-compra-uni" onchange="filtrarCompras()">
+      <option value="">Todas as unidades</option>
+      <option value="Matriz">Matriz</option>
+      <option value="Ensino Médio">Ensino Médio</option>
+    </select>
+    <input type="date" class="filter-select" id="filter-compra-de" title="Data inicial" onchange="filtrarCompras()" style="max-width:150px"/>
+    <input type="date" class="filter-select" id="filter-compra-ate" title="Data final" onchange="filtrarCompras()" style="max-width:150px"/>
+    <button class="btn btn-ghost" onclick="limparFiltrosCompras()" title="Limpar filtros"><i class="ti ti-x"></i> Limpar</button>
+    <button class="btn btn-primary" onclick="openModalCompra()"><i class="ti ti-plus"></i> Nova Compra</button>
+    <button class="btn btn-ghost" onclick="openModalFornecedores()"><i class="ti ti-building-store"></i> Fornecedores</button>
+    <button class="btn btn-ghost" onclick="exportarCompras()"><i class="ti ti-download"></i> Exportar</button>
+    <button class="btn btn-ghost" onclick="imprimirCompras()"><i class="ti ti-printer"></i> Imprimir</button>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title"><i class="ti ti-shopping-cart"></i> Registro de Compras TI (${list.length})</span>
+    </div>
+    <div class="rel-table-wrap compras-table-wrap">
+      <table class="table-compact">
+        <thead><tr>
+          <th>#</th><th>Item / Produto</th><th class="col-forn">Fornecedor</th><th class="col-qtd">Qtd</th>
+          <th class="col-vlr">Vlr Unit.</th><th class="col-vlr">Total</th><th class="col-data">Data Compra</th>
+          <th class="col-nf">Nota Fiscal</th><th class="col-sol">Solicitante</th><th class="col-setor">Setor</th>
+          <th class="col-unid">Unidade</th><th class="col-pagto">Pagto</th><th>Status</th><th class="col-inv">Inv.</th><th class="col-acoes">Ações</th>
+        </tr></thead>
+        <tbody id="compras-tbody">
+          ${renderComprasRows(list)}
+        </tbody>
+        ${list.length>0?`<tfoot>
+          <tr style="background:var(--gray-50)">
+            <td colspan="5" style="padding:10px 12px;font-weight:700;font-size:13px">TOTAL GERAL</td>
+            <td style="padding:10px 12px;font-weight:800;color:var(--primary);font-size:14px">R$ ${totalGasto.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+            <td colspan="9"></td>
+          </tr>
+        </tfoot>`:''}
+      </table>
+    </div>
+    <div id="compras-cards" class="compras-cards">
+      ${renderComprasCards(list)}
+    </div>
+  </div>`;
+}
+function renderComprasCards(list) {
+  if (!list.length) return `<div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div>`;
+  const statusColors = { 'Solicitado':'badge-pendente', 'Em cotação':'badge-andamento', 'Aprovado':'badge-reservado', 'Pedido realizado':'badge-aberto', 'Recebido':'badge-fechado', 'Entregue':'badge-ativo', 'Cancelado':'badge-cancelado' };
+  return list.map(c=>`
+  <div class="compra-card">
+    <div class="compra-card-top">
+      <strong>#${c.id} ${c.item||''}</strong>
+      <span class="badge ${statusColors[c.status]||'badge-pendente'}" style="font-size:10px">${c.status}</span>
+    </div>
+    <div class="compra-card-sub">${c.fornecedor||'—'} · ${formatDate(c.dataCompra)}${c.formaPagamento?` · ${c.formaPagamento}${(c.parcelas||0)>1?` ${(c.parcelas)}x`:''}`:''}</div>
+    <div class="compra-card-vals">
+      <span>${c.quantidade||1} × R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+      <strong>R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong>
+    </div>
+    <div class="compra-card-foot">
+      <button class="btn btn-ghost btn-sm" onclick="verCompra(${c.id})"><i class="ti ti-eye"></i> Ver detalhes</button>
+      <div style="display:flex;gap:2px">
+        <button class="btn-icon" onclick="editCompra(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
+        <button class="btn-icon" onclick="deleteCompra(${c.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>
+  </div>`).join('');
+}
+function renderComprasRows(list) {
+  if (!list.length) return `<tr><td colspan="15"><div class="empty-state"><i class="ti ti-shopping-cart-off"></i><h3>Nenhuma compra registrada</h3><p>Clique em "Nova Compra" para começar.</p></div></td></tr>`;
+  const statusColors = { 'Solicitado':'badge-pendente', 'Em cotação':'badge-andamento', 'Aprovado':'badge-reservado', 'Pedido realizado':'badge-aberto', 'Recebido':'badge-fechado', 'Entregue':'badge-ativo', 'Cancelado':'badge-cancelado' };
+  return list.map(c=>`
+  <tr>
+    <td><strong style="color:var(--primary)">#${c.id}</strong></td>
+    <td class="col-item" title="${c.item||''}">
+      <strong style="font-size:12px">${c.item}</strong>
+      ${c.descricao?`<br><span class="text-muted" style="font-size:10px">${c.descricao}</span>`:''}
+      ${c.categoria?`<br><span class="badge badge-reservado" style="font-size:10px;margin-top:2px">${c.categoria}</span>`:''}
+    </td>
+    <td class="col-forn" style="font-size:12px">${c.fornecedor||'—'}<br><span class="text-muted" style="font-size:10px">${c.contatoFornecedor||''}</span></td>
+    <td class="col-qtd" style="text-align:center;font-weight:700">${c.quantidade||1}</td>
+    <td class="col-vlr num" style="text-align:right">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+    <td class="col-vlr num" style="text-align:right;font-weight:700;color:var(--primary)">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}${(c.descontoValor||0)>0?`<br><span style="font-size:10px;font-weight:600;color:var(--success)">desc R$ ${c.descontoValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>`:''}${(c.frete||0)>0?`<br><span style="font-size:10px;font-weight:600;color:var(--accent)">+frete R$ ${c.frete.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>`:''}</td>
+    <td class="col-data" style="font-size:12px;white-space:nowrap">${formatDate(c.dataCompra)}</td>
+    <td class="col-nf" style="font-size:11px;color:var(--gray-500)">${c.notaFiscal||'—'}</td>
+    <td class="col-sol" style="font-size:12px">${c.solicitante||'—'}</td>
+    <td class="col-setor" style="font-size:11px">${c.setor||'—'}</td>
+    <td class="col-unid" style="font-size:11px">${c.unidade||'Matriz'}</td>
+    <td class="col-pagto" style="font-size:11px;white-space:nowrap">${c.formaPagamento?`${c.formaPagamento}${(c.parcelas||0)>1?` ${(c.parcelas)}x`:''}`:'—'}</td>
+    <td><span class="badge ${statusColors[c.status]||'badge-pendente'}" style="font-size:10px">${c.status}</span></td>
+    <td class="col-inv" style="text-align:center">${c.adicionarInventario?'<i class="ti ti-check" style="color:var(--success);font-size:16px"></i>':'<i class="ti ti-x" style="color:var(--gray-300);font-size:14px"></i>'}</td>
+    <td class="col-acoes">
+      <div style="display:flex;gap:2px">
+        <button class="btn-icon" onclick="editCompra(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
+        <button class="btn-icon" onclick="verCompra(${c.id})" title="Detalhes" style="color:var(--primary)"><i class="ti ti-eye"></i></button>
+        <button class="btn-icon" onclick="deleteCompra(${c.id})" title="Excluir" style="color:var(--danger)"><i class="ti ti-trash"></i></button>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+function filtrarCompras() {
+  const q    = ($('#search-compra')?.value||'').toLowerCase();
+  const st   = $('#filter-compra-status')?.value||'';
+  const uni  = $('#filter-compra-uni')?.value||'';
+  const de   = $('#filter-compra-de')?.value||'';
+  const ate  = $('#filter-compra-ate')?.value||'';
+  const list = [...STATE.compras]
+    .filter(c=>(!q||c.item?.toLowerCase().includes(q)||c.fornecedor?.toLowerCase().includes(q)||c.solicitante?.toLowerCase().includes(q))&&(!st||c.status===st)&&(!uni||(c.unidade||'Matriz')===uni)&&(!de||(c.dataCompra||'')>=de)&&(!ate||(c.dataCompra||'')<=ate))
+    .sort((a,b)=>(b.dataCompra||'').localeCompare(a.dataCompra||''));
+  const tb=$('#compras-tbody'); if(tb) tb.innerHTML=renderComprasRows(list);
+  const cd=$('#compras-cards'); if(cd) cd.innerHTML=renderComprasCards(list);
+}
+function limparFiltrosCompras() {
+  const s=$('#search-compra'); if(s) s.value='';
+  const st=$('#filter-compra-status'); if(st) st.value='';
+  const u=$('#filter-compra-uni'); if(u) u.value='';
+  const de=$('#filter-compra-de'); if(de) de.value='';
+  const ate=$('#filter-compra-ate'); if(ate) ate.value='';
+  filtrarCompras();
+}
+function openModalCompra(compraId=null) {
+  const c = compraId ? STATE.compras.find(c=>String(c.id)===String(compraId)) : null;
+  openModal(`
+  <div class="modal modal-lg" style="max-width:720px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white">
+        <i class="ti ti-shopping-cart" style="color:#60a5fa"></i>
+        ${c?'Editar Compra':'Registrar Nova Compra'}
+      </span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <!-- ITEM -->
+      <div style="background:var(--primary-light);border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--primary)">
+        <div style="font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-box"></i> Dados do Produto / Serviço</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Descrição do Item / Produto</label>
+            <input type="text" id="cp-item" placeholder="Ex: Notebook Dell Inspiron 15" value="${c?.item||''}"/>
+          </div>
+          <div class="form-group">
+            <label class="required">Categoria</label>
+            <select id="cp-categoria">
+              <option value="">Selecione...</option>
+              ${CATS_COMPRA.map(o=>`<option ${c?.categoria===o?'selected':''}>${o}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Descrição Detalhada / Especificações</label>
+          <textarea id="cp-descricao" rows="2" placeholder="Especificações técnicas, cor, modelo, capacidade...">${c?.descricao||''}</textarea>
+        </div>
+        <div class="form-row-3">
+          <div class="form-group">
+            <label class="required">Quantidade</label>
+            <div class="qty-control">
+              <button class="qty-btn" type="button" onclick="changeQtyCp(-1)">−</button>
+              <input class="qty-value" type="number" id="cp-qtd" value="${c?.quantidade||1}" min="1" oninput="calcTotalCompra()"/>
+              <button class="qty-btn" type="button" onclick="changeQtyCp(1)">+</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="required">Valor Unitário (R$)</label>
+            <input type="number" id="cp-vlrunit" min="0" step="0.01" placeholder="0,00" value="${c?.valorUnitario||''}" oninput="calcTotalCompra()"/>
+          </div>
+          <div class="form-group">
+            <label>Desconto (%)</label>
+            <input type="number" id="cp-descperc" min="0" max="100" step="0.01" placeholder="0" value="${c?.descontoPercent||''}" oninput="calcTotalCompra()"/>
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:0">
+          <div class="form-group" style="margin-bottom:0">
+            <label>Desconto (R$)</label>
+            <input type="text" inputmode="decimal" id="cp-descreais" placeholder="0,00" value="${c?.descontoReais??''}" oninput="calcTotalCompra()"/>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>Frete (R$)</label>
+            <input type="text" inputmode="decimal" id="cp-frete" placeholder="0,00" value="${c?.frete??''}" oninput="calcTotalCompra()"/>
+          </div>
+        </div>
+        <div class="cp-totais">
+          <div style="background:var(--gray-50);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--gray-500);text-transform:uppercase">Subtotal</div><div id="cp-subtotal" style="font-size:15px;font-weight:800">R$ 0,00</div></div>
+          <div style="background:#f0fdf4;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--success);text-transform:uppercase">Desconto Total</div><div id="cp-descval" style="font-size:15px;font-weight:800;color:var(--success)">R$ 0,00</div></div>
+          <div style="background:#eff6ff;border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase">Frete (R$)</div><div id="cp-freteval" style="font-size:15px;font-weight:800;color:var(--accent)">R$ 0,00</div></div>
+          <div style="background:var(--primary-light);border-radius:8px;padding:8px 12px"><div style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase">Valor Final</div><div id="cp-final" style="font-size:15px;font-weight:800;color:var(--primary)">R$ 0,00</div></div>
+        </div>
+        <input type="hidden" id="cp-vlrtotal" value="${c?.valorTotal||''}"/>
+      </div>
+      <!-- FORNECEDOR -->
+      <div style="background:#f0fdf4;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--success)">
+        <div style="font-size:11px;font-weight:700;color:var(--success);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-building-store"></i> Fornecedor</div>
+        <div class="form-group">
+          <label>Fornecedor Cadastrado (opcional)</label>
+          <select id="cp-fornecedor-id" onchange="preencherFornecedorCompra()">
+            <option value="">Digitar manualmente abaixo...</option>
+            ${(STATE.fornecedores||[]).filter(f=>f.ativo!==false).map(f=>`<option value="${f.id}" ${String(c?.fornecedorId)===String(f.id)?'selected':''}>${f.nome}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Nome do Fornecedor</label>
+            <input type="text" id="cp-fornecedor" placeholder="Ex: Dell, Kabum, Amazon, Magazin..." value="${c?.fornecedor||''}"/>
+          </div>
+          <div class="form-group">
+            <label>Contato / Site / CNPJ</label>
+            <input type="text" id="cp-contato" placeholder="site.com.br ou (11) 99999-9999" value="${c?.contatoFornecedor||''}"/>
+          </div>
+        </div>
+      </div>
+      <!-- PAGAMENTO -->
+      <div style="background:#eff6ff;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--accent)">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-credit-card"></i> Pagamento</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Forma de Pagamento</label>
+            <select id="cp-pagamento">
+              <option value="">Não informado</option>
+              ${PAGAMENTOS_COMPRA.map(p=>`<option ${c?.formaPagamento===p?'selected':''}>${p}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Parcelas</label>
+            <input type="number" id="cp-parcelas" min="1" step="1" placeholder="1" value="${c?.parcelas||1}"/>
+          </div>
+        </div>
+      </div>
+      <!-- PEDIDO -->
+      <div style="background:#fff7ed;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid var(--warning)">
+        <div style="font-size:11px;font-weight:700;color:var(--warning);text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-file-invoice"></i> Dados do Pedido</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Data da Compra</label>
+            <input type="date" id="cp-data" value="${c?.dataCompra||dateNow()}"/>
+          </div>
+          <div class="form-group">
+            <label>Nº da Nota Fiscal</label>
+            <input type="text" id="cp-nf" placeholder="Ex: NF-12345 (não obrigatório)" value="${c?.notaFiscal||''}"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Data de Entrega Prevista</label>
+            <input type="date" id="cp-entrega" value="${c?.dataEntrega||''}"/>
+          </div>
+          <div class="form-group">
+            <label class="required">Status da Compra</label>
+            <select id="cp-status">
+              ${STATUS_COMPRA.map(s=>`<option ${c?.status===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Link do Produto / Pedido</label>
+          <input type="text" id="cp-link" placeholder="https://..." value="${c?.link||''}"/>
+        </div>
+      </div>
+      <!-- SOLICITANTE / DESTINO -->
+      <div style="background:#fdf4ff;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;border-left:4px solid #7b1fa2">
+        <div style="font-size:11px;font-weight:700;color:#7b1fa2;text-transform:uppercase;margin-bottom:12px;letter-spacing:.06em"><i class="ti ti-user-check"></i> Solicitante & Destino</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Solicitado por</label>
+            <div style="position:relative">
+              <input type="text" id="cp-solicitante" placeholder="Nome do solicitante" value="${c?.solicitante||STATE.currentUser.nome}" autocomplete="off" oninput="showUserSuggest(this,'cp-sol-list')"/>
+              <div id="cp-sol-list" class="autocomplete-list" style="display:none"></div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="required">Setor Destinatário</label>
+            <select id="cp-setor">
+              <option value="">Selecione...</option>
+              ${SETORES_COMPRA.map(s=>`<option ${c?.setor===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="required">Unidade</label>
+            <select id="cp-unidade">
+              <option value="Matriz" ${!c||c.unidade==='Matriz'?'selected':''}>Matriz</option>
+              <option value="Ensino Médio" ${c?.unidade==='Ensino Médio'?'selected':''}>Ensino Médio</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Aprovado por</label>
+            <input type="text" id="cp-aprovado" placeholder="Nome de quem aprovou" value="${c?.aprovadoPor||''}"/>
+          </div>
+        </div>
+      </div>
+      <!-- OBSERVAÇÕES + INVENTÁRIO -->
+      <div class="form-row">
+        <div class="form-group">
+          <label>Observações</label>
+          <textarea id="cp-obs" rows="2" placeholder="Informações adicionais, motivo da compra...">${c?.obs||''}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Garantia (meses)</label>
+          <input type="number" id="cp-garantia" min="0" placeholder="Ex: 12" value="${c?.garantiaMeses||''}"/>
+          <div style="margin-top:12px;padding:12px;background:var(--primary-light);border-radius:var(--radius);border:1.5px solid var(--primary-mid)">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+              <input type="checkbox" id="cp-inventario" ${c?.adicionarInventario?'checked':''} style="width:18px;height:18px;margin-top:1px;accent-color:var(--primary);flex-shrink:0">
+              <div>
+                <span style="font-size:13px;font-weight:700;color:var(--primary);display:block">Adicionar ao Inventário TI</span>
+                <span style="font-size:11px;color:var(--gray-500)">Ao receber, o item será registrado automaticamente no inventário com todos os dados.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="background:var(--gray-50)">
+      <button class="btn btn-ghost" onclick="closeModal()"><i class="ti ti-x"></i> Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarCompra(${compraId||'null'})">
+        <i class="ti ti-check"></i> ${c?'Salvar Alterações':'Registrar Compra'}
+      </button>
+    </div>
+  </div>`);
+  const semDesconto = !!(c&&!(c.descontoPercent||c.descontoValor||c.descontoReais||c.frete));
+  setTimeout(()=>inicializarTotaisCompra(semDesconto,(c&&c.valorTotal)||0), 50);
+}
+function inicializarTotaisCompra(preservar, valorSalvo) {
+  if(!preservar) { calcTotalCompra(); return; }
+  // Compra antiga sem desconto: exibe subtotal calculado mas mantém o total salvo
+  const qtd=parseFloat($('#cp-qtd')?.value)||0;
+  const unit=parseFloat($('#cp-vlrunit')?.value)||0;
+  const fmt=v=>'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const elS=$('#cp-subtotal'); if(elS) elS.textContent=fmt(qtd*unit);
+  const elD=$('#cp-descval'); if(elD) elD.textContent=fmt(0);
+  const elFr=$('#cp-freteval'); if(elFr) elFr.textContent=fmt(0);
+  const elF=$('#cp-final'); if(elF) elF.textContent=fmt(valorSalvo);
+}
+function changeQtyCp(d) {
+  const i=$('#cp-qtd'); if(i) { i.value=Math.max(1,parseInt(i.value||1)+d); calcTotalCompra(); }
+}
+function parseMoeda(v) {
+  if (v == null) return 0;
+  let s = String(v).trim();
+  if (!s) return 0;
+  // Padrão BR: com vírgula, pontos são milhares ("1.000,00" -> 1000)
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isFinite(n) ? n : NaN;
+}
+function calcTotaisCompra(qtd, unit, descPerc, descReais, frete) {
+  const subtotal = (qtd||0) * (unit||0);
+  const descPercVal = subtotal * (descPerc||0) / 100;
+  const descTotal = Math.min(subtotal, descPercVal + (descReais||0));
+  const final = Math.max(0, subtotal - descTotal + (frete||0));
+  return { subtotal, descPercVal, descTotal, final };
+}
+function calcTotalCompra() {
+  const qtd=parseFloat($('#cp-qtd')?.value)||0;
+  const unit=parseFloat($('#cp-vlrunit')?.value)||0;
+  let desc=parseFloat($('#cp-descperc')?.value)||0;
+  if(desc<0) desc=0; if(desc>100) desc=100;
+  const reais=parseMoeda($('#cp-descreais')?.value);
+  const frete=parseMoeda($('#cp-frete')?.value);
+  const t=calcTotaisCompra(qtd,unit,desc,isNaN(reais)?0:Math.max(0,reais),isNaN(frete)?0:Math.max(0,frete));
+  const fmt=v=>'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const elS=$('#cp-subtotal'); if(elS) elS.textContent=fmt(t.subtotal);
+  const elD=$('#cp-descval'); if(elD) elD.textContent=fmt(t.descTotal);
+  const elFr=$('#cp-freteval'); if(elFr) elFr.textContent=fmt(isNaN(frete)?0:Math.max(0,frete));
+  const elF=$('#cp-final'); if(elF) elF.textContent=fmt(t.final);
+  const total=$('#cp-vlrtotal'); if(total) total.value=t.final.toFixed(2);
+}
+function preencherFornecedorCompra() {
+  const id=$('#cp-fornecedor-id')?.value||'';
+  if(!id) return;
+  const f=(STATE.fornecedores||[]).find(f=>String(f.id)===String(id));
+  if(!f) return;
+  const n=$('#cp-fornecedor'); if(n && !n.value.trim()) n.value=f.nome||'';
+  const ct=$('#cp-contato'); if(ct && !ct.value.trim()) ct.value=f.contato||f.telefone||f.email||'';
+}
+async function salvarCompra(id) {
+  const item=$('#cp-item')?.value.trim();
+  const fornecedor=$('#cp-fornecedor')?.value.trim();
+  const data=$('#cp-data')?.value;
+  const solicitante=$('#cp-solicitante')?.value.trim();
+  const setor=$('#cp-setor')?.value;
+  if(!item||!fornecedor||!data||!solicitante||!setor){
+    toast('Preencha: Item, Fornecedor, Data, Solicitante e Setor.','error'); return;
+  }
+  const qtd=parseInt($('#cp-qtd')?.value)||1;
+  const vlrUnit=parseMoeda($('#cp-vlrunit')?.value);
+  if(isNaN(vlrUnit)||vlrUnit<0){ toast('Valor unitário inválido.','error'); return; }
+  let descPerc=parseFloat($('#cp-descperc')?.value)||0;
+  if(isNaN(descPerc)) descPerc=0;
+  if(descPerc<0||descPerc>100){ toast('Desconto deve estar entre 0 e 100%.','error'); return; }
+  let descReais=parseMoeda($('#cp-descreais')?.value);
+  if(isNaN(descReais)) descReais=0;
+  if(descReais<0){ toast('Desconto (R$) não pode ser negativo.','error'); return; }
+  let frete=parseMoeda($('#cp-frete')?.value);
+  if(isNaN(frete)) frete=0;
+  if(frete<0){ toast('Frete não pode ser negativo.','error'); return; }
+  const parcRaw=$('#cp-parcelas')?.value;
+  let parc=(parcRaw===''||parcRaw==null)?1:parseInt(parcRaw);
+  if(isNaN(parc)||parc<1){ toast('Parcelas deve ser um número inteiro maior que zero.','error'); return; }
+  const formaPag=$('#cp-pagamento')?.value||'';
+  if(formaPag && !PAGAMENTOS_COMPRA.includes(formaPag)){ toast('Forma de pagamento inválida.','error'); return; }
+  const subtotal=qtd*vlrUnit;
+  const t=calcTotaisCompra(qtd,vlrUnit,descPerc,descReais,frete);
+  let vlrTotal=parseFloat(($('#cp-vlrtotal')?.value)||'') ;
+  if(isNaN(vlrTotal)) vlrTotal=t.final;
+  if(vlrTotal<0){ toast('Valor final não pode ser negativo.','error'); return; }
+  vlrTotal=Math.round(vlrTotal*100)/100;
+  const fornId=$('#cp-fornecedor-id')?.value||'';
+  const addInv=$('#cp-inventario')?.checked;
+  const status=$('#cp-status')?.value||'Solicitado';
+  const garantiaMeses=parseInt($('#cp-garantia')?.value)||0;
+  const dados={
+    item, categoria:$('#cp-categoria')?.value||'',
+    descricao:$('#cp-descricao')?.value||'',
+    fornecedor, contatoFornecedor:$('#cp-contato')?.value||'',
+    fornecedorId: fornId||'',
+    formaPagamento: formaPag, parcelas: parc,
+    quantidade:qtd, valorUnitario:vlrUnit, valorTotal:vlrTotal,
+    descontoPercent: descPerc, descontoValor: Math.round(t.descTotal*100)/100,
+    descontoReais: Math.round(descReais*100)/100, frete: Math.round(frete*100)/100,
+    dataCompra:data, notaFiscal:$('#cp-nf')?.value||'',
+    dataEntrega:$('#cp-entrega')?.value||'', status,
+    link:$('#cp-link')?.value||'',
+    solicitante, setor, unidade:$('#cp-unidade')?.value||'Matriz',
+    aprovadoPor:$('#cp-aprovado')?.value||'',
+    obs:$('#cp-obs')?.value||'',
+    garantiaMeses, adicionarInventario:addInv,
+    criado:dateNow()
+  };
+  if(id) {
+    const c=STATE.compras.find(c=>String(c.id)===String(id));
+    if(c) { Object.assign(c,dados); const fbResult = await fbSave('compras',c.id,c); if(fbResult === true){ toast('Compra atualizada!'); } else if(fbResult === false){ toast('Compra atualizada localmente.','info'); } }
+    if(status==='Recebido'&&addInv&&c) adicionarCompraInventario(c);
+    toast('Compra atualizada!');
+  } else {
+    const nc={id:STATE.nextId.compra++,...dados};
+    STATE.compras.push(nc); const fbResult = await fbSave('compras',nc.id,nc); if(fbResult === true){ addNotification('Nova compra registrada',item+' → '+fornecedor,'ti-shopping-cart'); toast('Compra registrada!'); }
+    addNotification('Nova compra registrada',`${item} — ${fornecedor}`,'ti-shopping-cart');
+    // Se status Recebido e addInv, adicionar ao inventário
+    if(status==='Recebido'&&addInv) adicionarCompraInventario(nc);
+    toast('Compra registrada!');
+  }
+  closeModal(); saveState(); renderPage('compras');
+}
+function adicionarCompraInventario(c) {
+  const pat=`CP-${c.id}`;
+  if(STATE.inventario.find(i=>i.patrimonio===pat)){ toast('Este item já foi adicionado ao inventário.','warning'); return; }
+  const garantiaDate = c.garantiaMeses
+    ? new Date(new Date(c.dataCompra+'T12:00:00').getTime()+c.garantiaMeses*30*86400000).toISOString().split('T')[0]
+    : '';
+  const ni={
+    id:STATE.nextId.inventario++, nome:c.item,
+    categoria:c.categoria||'Outro', tipo:c.categoria||'',
+    marca:'', modelo:'', patrimonio:pat,
+    serie:'', ip:'', local:'', unidade:c.unidade,
+    garantia:garantiaDate, status:'ativo', obs:`Compra #${c.id} — ${c.fornecedor}`,
+    quantidade:c.quantidade
+  };
+  STATE.inventario.push(ni); fbSave('inventario',ni.id,ni);
+  saveState();
+  toast(`${c.item} adicionado ao inventário!`,'success');
+}
+function editCompra(id) { openModalCompra(id); }
+function deleteCompra(id) {
+  if(!confirm('Excluir esta compra?')) return;
+  fbDelete('compras',id);
+  STATE.compras=STATE.compras.filter(c=>String(c.id)!==String(id));
+  saveState(); renderPage('compras'); toast('Compra excluída.','info');
+}
+function verCompra(id) {
+  const c=STATE.compras.find(c=>String(c.id)===String(id)); if(!c) return;
+  openModal(`
+  <div class="modal" style="max-width:580px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-shopping-cart" style="color:#60a5fa"></i> Compra #${c.id}</span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <div style="padding:20px 24px;background:var(--primary);color:white">
+        <div style="font-size:20px;font-weight:800">${c.item}</div>
+        <div style="font-size:13px;opacity:.8;margin-top:4px">${c.categoria||''} ${c.descricao?'— '+c.descricao:''}</div>
+        <div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap">
+          <div style="text-align:center">
+            <div style="font-size:22px;font-weight:800">${c.quantidade}</div>
+            <div style="font-size:11px;opacity:.75">Unidades</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:22px;font-weight:800">R$ ${(c.valorUnitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
+            <div style="font-size:11px;opacity:.75">Valor unitário</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:22px;font-weight:800">R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div>
+            <div style="font-size:11px;opacity:.75">Total</div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:20px 24px">
+        ${[
+          ['Fornecedor', c.fornecedor, 'ti-building-store'],
+          ['Contato / Site', c.contatoFornecedor||'—', 'ti-phone'],
+          ['Data da Compra', formatDate(c.dataCompra), 'ti-calendar'],
+          ['Entrega Prevista', c.dataEntrega?formatDate(c.dataEntrega):'—', 'ti-truck'],
+          ['Nota Fiscal', c.notaFiscal||'—', 'ti-file-invoice'],
+          ['Solicitante', c.solicitante, 'ti-user'],
+          ['Aprovado por', c.aprovadoPor||'—', 'ti-user-check'],
+          ['Setor', c.setor, 'ti-building'],
+          ['Unidade', c.unidade||'Matriz', 'ti-map-pin'],
+          ['Garantia', c.garantiaMeses?c.garantiaMeses+' meses':'—', 'ti-shield-check'],
+          ['Status', c.status, 'ti-circle'],
+          ['Pagamento', c.formaPagamento||'—', 'ti-credit-card'],
+          ['Parcelas', c.parcelas?c.parcelas+'x':'—', 'ti-calendar'],
+          ['Subtotal', `R$ ${((c.quantidade||0)*(c.valorUnitario||0)).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-calculator'],
+          ['Desconto', (c.descontoPercent||0)>0?`${c.descontoPercent}% (R$ ${(c.descontoValor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})})`:'—', 'ti-discount'],
+          ['Desconto (R$)', `R$ ${(c.descontoReais??c.descontoValor??0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-cash'],
+          ['Frete', `R$ ${(c.frete||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-truck'],
+          ['Total', `R$ ${(c.valorTotal||0).toLocaleString('pt-BR',{minimumFractionDigits:2})}`, 'ti-coin'],
+          ['Inventário', c.adicionarInventario?'Sim — será adicionado':'Não', 'ti-server'],
+        ].map(([l,v,ic])=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--gray-100)">
+          <i class="ti ${ic}" style="color:var(--primary);width:20px;text-align:center;flex-shrink:0"></i>
+          <span style="font-size:12px;color:var(--gray-500);min-width:130px">${l}</span>
+          <strong style="font-size:13px">${v}</strong>
+        </div>`).join('')}
+        ${c.obs?`<div style="margin-top:12px;padding:10px 12px;background:var(--gray-50);border-radius:8px;font-size:12px;color:var(--gray-600)">${c.obs}</div>`:''}
+        ${c.link?`<a href="${c.link}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;color:var(--primary)"><i class="ti ti-external-link"></i> Ver produto online</a>`:''}
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+      <button class="btn btn-primary" onclick="closeModal();setTimeout(()=>editCompra(${c.id}),100)"><i class="ti ti-edit"></i> Editar</button>
+      ${c.status==='Recebido'&&c.adicionarInventario&&!STATE.inventario.find(i=>i.patrimonio===`CP-${c.id}`)?`<button class="btn btn-success" onclick="adicionarCompraInventario(STATE.compras.find(c=>String(c.id)==='${c.id}'));renderPage('compras')"><i class="ti ti-server"></i> Adicionar ao Inventário</button>`:''}
+    </div>
+  </div>`);
+}
+// ===== FORNECEDORES =====
+function openModalFornecedores() {
+  const list=[...(STATE.fornecedores||[])].sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  openModal(`
+  <div class="modal modal-lg" style="max-width:640px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-building-store" style="color:#60a5fa"></i> Fornecedores (${list.length})</span>
+      <button class="btn-icon" onclick="closeModal()" style="color:white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <button class="btn btn-primary" onclick="openModalFornecedor()" style="margin-bottom:12px"><i class="ti ti-plus"></i> Novo Fornecedor</button>
+      ${!list.length?'<p class="text-muted" style="font-size:13px">Nenhum fornecedor cadastrado.</p>':`
+      <div class="table-wrapper"><table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead><tr><th style="text-align:left;padding:6px 8px">Nome</th><th style="text-align:left;padding:6px 8px">Contato</th><th style="text-align:left;padding:6px 8px">Status</th><th style="padding:6px 8px">Ações</th></tr></thead>
+        <tbody>${list.map(f=>`
+          <tr style="border-top:1px solid var(--gray-100)">
+            <td style="padding:6px 8px"><strong>${f.nome||'—'}</strong><br><span class="text-muted" style="font-size:11px">${f.email||''}</span></td>
+            <td style="padding:6px 8px;font-size:11px">${f.contato||'—'}${f.telefone?`<br>${f.telefone}`:''}</td>
+            <td style="padding:6px 8px"><span class="badge ${f.ativo!==false?'badge-fechado':'badge-suspenso'}" style="font-size:10px">${f.ativo!==false?'Ativo':'Inativo'}</span></td>
+            <td style="padding:6px 8px"><div style="display:flex;gap:2px;justify-content:center">
+              <button class="btn-icon" onclick="openModalFornecedor(${f.id})" title="Editar"><i class="ti ti-edit"></i></button>
+              <button class="btn-icon" onclick="toggleFornecedor(${f.id})" title="${f.ativo!==false?'Inativar':'Ativar'}" style="color:${f.ativo!==false?'var(--warning)':'var(--success)'}"><i class="ti ti-${f.ativo!==false?'ban':'refresh'}"></i></button>
+            </div></td>
+          </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+    <div class="modal-footer" style="background:var(--gray-50)">
+      <button class="btn btn-ghost" onclick="closeModal()">Fechar</button>
+    </div>
+  </div>`);
+}
+function openModalFornecedor(id=null) {
+  const f=id?(STATE.fornecedores||[]).find(f=>String(f.id)===String(id)):null;
+  openModal(`
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header" style="background:var(--gray-800)">
+      <span class="modal-title" style="color:white"><i class="ti ti-building-store" style="color:#60a5fa"></i> ${f?'Editar Fornecedor':'Novo Fornecedor'}</span>
+      <button class="btn-icon" onclick="openModalFornecedores()" style="color:white"><i class="ti ti-arrow-left"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label class="required">Nome</label><input type="text" id="forn-nome" placeholder="Ex: Dell, Kabum..." value="${f?.nome||''}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Contato / Site / CNPJ</label><input type="text" id="forn-contato" value="${f?.contato||''}"/></div>
+        <div class="form-group"><label>Telefone</label><input type="text" id="forn-tel" value="${f?.telefone||''}"/></div>
+      </div>
+      <div class="form-group"><label>E-mail</label><input type="email" id="forn-email" value="${f?.email||''}"/></div>
+      <div class="form-group"><label>Observação</label><textarea id="forn-obs" rows="2">${f?.obs||f?.observacao||''}</textarea></div>
+    </div>
+    <div class="modal-footer" style="background:var(--gray-50)">
+      <button class="btn btn-ghost" onclick="openModalFornecedores()">Voltar</button>
+      <button class="btn btn-primary" onclick="salvarFornecedor(${id||'null'})"><i class="ti ti-check"></i> Salvar</button>
+    </div>
+  </div>`);
+}
+function salvarFornecedor(id) {
+  const nome=$('#forn-nome')?.value.trim();
+  if(!nome){ toast('Informe o nome do fornecedor.','error'); return; }
+  const dados={ nome, contato:$('#forn-contato')?.value.trim()||'', telefone:$('#forn-tel')?.value.trim()||'',
+    email:$('#forn-email')?.value.trim()||'', observacao:$('#forn-obs')?.value.trim()||'' };
+  if(id) {
+    const f=(STATE.fornecedores||[]).find(f=>String(f.id)===String(id));
+    if(f){ Object.assign(f,dados); fbSave('fornecedores',f.id,f); }
+    toast('Fornecedor atualizado!');
+  } else {
+    if(!STATE.nextId.fornecedor) STATE.nextId.fornecedor=1;
+    const nf={id:STATE.nextId.fornecedor++,...dados,ativo:true,criado:dateNow()};
+    STATE.fornecedores.push(nf); fbSave('fornecedores',nf.id,nf); fbSaveConfig();
+    toast('Fornecedor cadastrado!');
+  }
+  saveState(); openModalFornecedores();
+}
+function toggleFornecedor(id) {
+  const f=(STATE.fornecedores||[]).find(f=>String(f.id)===String(id));
+  if(!f) return;
+  f.ativo=(f.ativo===false)?true:false;
+  fbSave('fornecedores',f.id,f); saveState(); openModalFornecedores();
+  toast(f.ativo?'Fornecedor ativado.':'Fornecedor inativado.','info');
+}
+function exportarCompras() {
+  exportarCSV(STATE.compras,'compras-ti-miro');
+}
+function imprimirCompras() {
+  const tabela = document.querySelector('.table-compact');
+  if (!tabela) { toast('Nada para imprimir.','warning'); return; }
+  const fBusca=$('#search-compra')?.value||'';
+  const fStatus=$('#filter-compra-status')?.value||'Todos';
+  const fUni=$('#filter-compra-uni')?.value||'Todas';
+  const fDe=$('#filter-compra-de')?.value||'';
+  const fAte=$('#filter-compra-ate')?.value||'';
+  const periodo=(fDe||fAte)?` · Período: ${fDe?formatDate(fDe):'...'} a ${fAte?formatDate(fAte):'...'}`:'';
+  const resumo=`Filtros — Busca: ${fBusca||'—'} · Status: ${fStatus} · Unidade: ${fUni}${periodo}`;
+  const estilos = Array.from(document.styleSheets).map(sheet => {
+    try { return Array.from(sheet.cssRules).map(r => r.cssText).join('\n'); } catch(e) { return ''; }
+  }).join('\n');
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>Compras TI — Escola Miró</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    body{font-family:'Nunito',sans-serif;font-size:12px;color:#1e293b;padding:16px;background:white}
+    .rel-print-header{display:flex;align-items:center;gap:16px;padding:16px 20px;background:#0073c8!important;border-radius:8px;margin-bottom:16px;color:white}
+    .rel-print-info h1{font-size:18px;font-weight:800;color:white;margin-bottom:2px}
+    .rel-print-info p{font-size:11px;color:rgba(255,255,255,.7)}
+    .rel-print-logo{background:white;border-radius:8px;padding:6px 10px;flex-shrink:0}
+    .rel-print-logo img{height:45px;object-fit:contain}
+    table{width:100%;border-collapse:collapse;font-size:10px;table-layout:auto}
+    thead{display:table-header-group}
+    thead th{background:#334155!important;color:white!important;padding:6px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:left;white-space:nowrap}
+    tbody td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;overflow-wrap:break-word}
+    tbody tr{page-break-inside:avoid}
+    td.num,th.col-vlr{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
+    .col-acoes{display:none!important}
+    .print-filtros{font-size:10px;color:#475569;margin-bottom:10px}
+    .badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:12px;font-size:9px;font-weight:700;text-transform:uppercase;border:1px solid transparent}
+    .badge-pendente{background:#ede9fe;color:#5b21b6;border-color:#c4b5fd}
+    .badge-aberto{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}
+    .badge-andamento{background:#fef3c7;color:#92400e;border-color:#fcd34d}
+    .badge-reservado{background:#e0f2fe;color:#0369a1;border-color:#7dd3fc}
+    .badge-fechado{background:#d1fae5;color:#065f46;border-color:#6ee7b7}
+    .badge-ativo{background:#d1fae5;color:#065f46;border-color:#6ee7b7}
+    .badge-cancelado{background:#f3f4f6;color:#6b7280;border-color:#d1d5db}
+    .rel-print-footer{margin-top:16px;padding-top:10px;border-top:2px solid #e2e8f0;text-align:center;font-size:10px;color:#64748b}
+    .no-print,.btn,.btn-icon,.actions-menu,.filter-bar{display:none!important}
+    @page{margin:1.2cm;size:A4 landscape}
+  </style></head><body>
+  <div class="rel-print-header"><div class="rel-print-logo"><img src="logo.png" alt="Escola Miró" onerror="this.style.display='none'"></div><div class="rel-print-info"><h1>Compras de TI</h1><p>Escola Miró — Impressão: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</p></div></div>
+  <div class="print-filtros">${resumo}</div>
+  ${tabela.outerHTML}
+  <div class="rel-print-footer">TI - Escola Miró — Sistema de Gestão</div>
+  </body></html>`;
+  const janela = window.open('','_blank','width=1200,height=700');
+  if(!janela){ toast('Permita pop-ups para imprimir.','warning'); return; }
+  janela.document.write(html); janela.document.close();
+  janela.onload=()=>{ setTimeout(()=>{ janela.focus(); janela.print(); },600); };
+}
+// ===== IMPRESSÃO ROBUSTA =====
+function imprimirRelatorio() {
+  const conteudo = document.getElementById('rel-content');
+  if (!conteudo) { window.print(); return; }
+  // Converter canvas para imagens antes de copiar
+  const tempDiv = conteudo.cloneNode(true);
+  const origCanvas = conteudo.querySelectorAll('canvas');
+  const cloneCanvas = tempDiv.querySelectorAll('canvas');
+  cloneCanvas.forEach((cv, i) => {
+    try {
+      const img = document.createElement('img');
+      img.src = origCanvas[i].toDataURL('image/png');
+      img.style.cssText = 'width:100%;max-height:180px;display:block';
+      cv.parentNode.replaceChild(img, cv);
+    } catch(e) {}
+  });
+  // Capturar CSS do documento atual
+  const estilos = Array.from(document.styleSheets).map(sheet => {
+    try {
+      return Array.from(sheet.cssRules).map(r => r.cssText).join('\n');
+    } catch(e) { return ''; }
+  }).join('\n');
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <title>TI - Escola Miró — Relatório</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { font-family: 'Nunito', sans-serif; font-size: 12px; color: #1e293b; padding: 16px; background: white; }
+    /* KPI grid */
+    .rel-kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 16px; }
+    .rel-kpi { border-radius: 8px; padding: 12px 14px; border: 1px solid #e2e8f0; }
+    .rel-kpi.blue   { background: #e8f3fd !important; border-color: #b3d7f5; }
+    .rel-kpi.green  { background: #eafaf1 !important; border-color: #a7f3c0; }
+    .rel-kpi.red    { background: #fdedec !important; border-color: #fca5a5; }
+    .rel-kpi.orange { background: #fef5e7 !important; border-color: #fcd34d; }
+    .rel-kpi.teal   { background: #e0f7f7 !important; border-color: #99e6e6; }
+    .rel-kpi.purple { background: #f3e5f5 !important; border-color: #d8b4fe; }
+    .rel-kpi.gray   { background: #f8f9fa !important; border-color: #cbd5e1; }
+    .rel-kpi-num  { font-size: 22px; font-weight: 800; line-height: 1; margin-bottom: 3px; color: #0f172a; }
+    .rel-kpi-label{ font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing:.04em; }
+    .rel-kpi.blue   .rel-kpi-num { color: #0073c8; }
+    .rel-kpi.green  .rel-kpi-num { color: #27ae60; }
+    .rel-kpi.red    .rel-kpi-num { color: #e74c3c; }
+    .rel-kpi.orange .rel-kpi-num { color: #e67e22; }
+    .rel-kpi.teal   .rel-kpi-num { color: #009688; }
+    .rel-kpi.purple .rel-kpi-num { color: #7b1fa2; }
+    /* Cards: podem continuar na mesma página após os KPIs; cabeçalho não fica órfão */
+    .card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 14px; overflow: hidden; page-break-inside: auto; }
+    .card-header { padding: 10px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; page-break-after: avoid; }
+    .card-body { padding: 16px; }
+    thead { display: table-header-group; }
+    tbody tr { page-break-inside: avoid; }
+    .rel-kpi-grid { page-break-inside: avoid; }
+    /* Cabeçalho institucional */
+    .rel-print-header { display: flex !important; align-items: center; gap: 16px; padding: 16px 20px; background: #0073c8 !important; border-radius: 8px; margin-bottom: 16px; color: white; }
+    .rel-print-info h1 { font-size: 18px; font-weight: 800; color: white; margin-bottom: 2px; }
+    .rel-print-info h2 { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.85); margin-bottom: 4px; }
+    .rel-print-info p  { font-size: 11px; color: rgba(255,255,255,.7); }
+    .rel-print-logo { background: white; border-radius: 8px; padding: 6px 10px; flex-shrink: 0; }
+    .rel-print-logo img { height: 45px; object-fit: contain; }
+    /* Filtros */
+    .rel-filter-summary { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; font-size: 11px; color: #475569; }
+    .rel-filter-tag { background: #e8f3fd; color: #0073c8; border: 1px solid #b3d7f5; padding: 2px 8px; border-radius: 12px; font-weight: 600; font-size: 10px; }
+    /* Tabelas */
+    .rel-table-wrap, .table-wrapper { overflow: visible; width: 100%; }
+    table, .rel-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    thead th { background: #334155 !important; color: white !important; padding: 6px 8px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; text-align: left; }
+    tbody td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .rel-row-alt { background: #f8fafc !important; }
+    tfoot td { border-top: 2px solid #e2e8f0; padding: 8px; font-weight: 700; }
+    /* Badges */
+    .badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 12px; font-size: 9px; font-weight: 700; text-transform: uppercase; border: 1px solid transparent; }
+    .badge-aberto    { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+    .badge-andamento { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    .badge-fechado   { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+    .badge-suspenso  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+    .badge-ativo     { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+    .badge-reservado { background: #e0f2fe; color: #0369a1; border-color: #7dd3fc; }
+    .badge-cancelado { background: #f3f4f6; color: #6b7280; border-color: #d1d5db; }
+    .badge-pendente  { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+    /* Prioridade */
+    .rel-prio { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+    .rel-prio-alta   { background: #fee2e2; color: #991b1b; }
+    .rel-prio-media  { background: #fef3c7; color: #92400e; }
+    .rel-prio-baixa  { background: #d1fae5; color: #065f46; }
+    /* Grid */
+    .grid-2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-bottom: 14px; }
+    .mb-20 { margin-bottom: 14px; }
+    /* Gráficos */
+    .chart-container { height: 180px; position: relative; }
+    canvas { max-width: 100%; max-height: 180px; }
+    /* Rodapé */
+    .rel-print-footer { margin-top: 16px; padding-top: 10px; border-top: 2px solid #e2e8f0; text-align: center; font-size: 10px; color: #64748b; }
+    /* Esconder controles de tela */
+    .no-print, .rel-toolbar, .filter-bar, .btn, .btn-icon, .actions-menu { display: none !important; }
+    @page { margin: 1.2cm; size: A4 landscape; }
+  </style>
+</head>
+<body>
+  ${tempDiv.innerHTML}
+</body>
+</html>`;
+  const janela = window.open('', '_blank', 'width=1000,height=700');
+  if (!janela) { toast('Permita pop-ups para imprimir.', 'warning'); return; }
+  janela.document.write(html);
+  janela.document.close();
+  // Aguardar fontes e imagens carregarem
+  janela.onload = () => {
+    setTimeout(() => {
+      janela.focus();
+      janela.print();
+    }, 800);
+  };
+}
+// ===== INIT =====
+async function iniciar() {
+  // 1. Carregar dados locais primeiro (exibe rápido)
+  loadState();
+  STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
+  // 2. Mostrar tela de loading enquanto conecta ao Firebase
+  document.getElementById('app').innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0073c8,#003d6e);flex-direction:column;gap:20px">
+      <img src="logo.png" alt="Escola Miró" style="height:80px;object-fit:contain;filter:drop-shadow(0 4px 12px rgba(0,0,0,.3))" onerror="this.style.display='none'">
+      <div style="background:white;border-radius:16px;padding:32px 40px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);min-width:300px">
+        <div style="font-size:36px;margin-bottom:12px">☁️</div>
+        <h2 style="font-size:17px;font-weight:800;color:#1e293b;margin-bottom:6px">TI - Escola Miró</h2>
+        <p style="color:#64748b;font-size:13px;margin-bottom:18px">Conectando ao banco de dados...</p>
+        <div style="height:4px;background:#e2e8f0;border-radius:2px;overflow:hidden">
+          <div id="loading-bar" style="height:100%;width:30%;background:#0073c8;border-radius:2px;transition:width .5s ease"></div>
+        </div>
+        <p id="loading-status" style="font-size:11px;color:#94a3b8;margin-top:10px">Iniciando Firebase...</p>
+      </div>
+    </div>`;
+  const setProgress = (pct, msg) => {
+    const bar = document.getElementById('loading-bar');
+    const status = document.getElementById('loading-status');
+    if (bar) bar.style.width = pct + '%';
+    if (status) status.textContent = msg;
+  };
+  // 3. Conectar Firebase
+  setProgress(30, 'Conectando ao Firebase...');
+  const connected = await initFirebase();
+  if (connected) {
+    setProgress(60, 'Carregando dados da nuvem...');
+    const loaded = await fbLoadAll();
+    if (loaded) {
+      setProgress(80, 'Verificando migração...');
+      await migrarLocalParaFirebase();
+    }
+    setProgress(90, 'Configurando listeners em tempo real...');
+    setupRealtimeListeners();
+  } else {
+    setProgress(90, 'Modo offline — usando dados locais...');
+    toast('⚠️ Firebase indisponível. Usando dados locais.', 'warning');
+  }
+  setProgress(100, 'Pronto!');
+  STATE.licencas.forEach(l=>{ const d=diasParaVencer(l.vencimento); if(d<=0) l.status='expirado'; else if(d<=30) l.status='vencendo'; });
+  // 4. Renderizar
+  window.addEventListener('beforeunload', saveState);
+  iniciarBackupAutomatico();
+  setTimeout(() => render(), 300);
+}
+// ===== LISTENERS TEMPO REAL =====
+function setupRealtimeListeners() {
+  if (!DB_READY) return;
+  const { collection, onSnapshot } = window.FB_FUNS;
+  const colMap = {
+    reservas:        (d) => { STATE.reservas        = d; },
+    chamados:        (d) => { STATE.chamados        = d; },
+    users:           (d) => { STATE.users           = d; updateNotifBadge(); },
+    equipamentos:    (d) => { STATE.equipamentos    = d; },
+    inventario:      (d) => { STATE.inventario      = d; },
+    licencas:        (d) => { STATE.licencas        = d.map(l=>{ const dv=diasParaVencer(l.vencimento); if(dv<=0) l.status='expirado'; else if(dv<=30) l.status='vencendo'; return l; }); },
+    acompanhamentos: (d) => { STATE.acompanhamentos = d; },
+    compras:         (d) => { STATE.compras         = d; },
+    fornecedores:    (d) => { STATE.fornecedores    = d; },
+  };
+  for (const [col, setter] of Object.entries(colMap)) {
+    onSnapshot(collection(db, col), (snap) => {
+      if (!snap.empty) {
+        setter(snap.docs.map(d => d.data()));
+        saveState();
+        // Atualizar página atual silenciosamente se estiver logado
+        if (STATE.currentUser && document.getElementById('page-content')) {
+          renderPage(STATE.currentPage);
+        }
+      }
+    });
+  }
+}
+// ===== BACKUP & RESTAURAÇÃO =====
+function exportarBackupJSON() {
+  const dados = {
+    versao: '8.9',
+    exportadoEm: new Date().toISOString(),
+    reservas:        STATE.reservas,
+    chamados:        STATE.chamados,
+    equipamentos:    STATE.equipamentos,
+    users:           STATE.users,
+    inventario:      STATE.inventario,
+    licencas:        STATE.licencas,
+    acompanhamentos: STATE.acompanhamentos,
+    compras:         STATE.compras || [],
+    fornecedores:    STATE.fornecedores || [],
+    nextId:          STATE.nextId,
+  };
+  const json = JSON.stringify(dados, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const data = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+  a.href = url;
+  a.download = 'backup-ti-miro-' + data + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('✅ Backup salvo! Guarde o arquivo em lugar seguro.', 'success');
+}
+function importarBackupJSON() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const dados = JSON.parse(text);
+      if (!dados.reservas || !dados.chamados) {
+        toast('Arquivo inválido — não é um backup do sistema.', 'error');
+        return;
+      }
+      if (!confirm('Isso vai SUBSTITUIR todos os dados atuais pelo backup. Confirma?')) return;
+      // Restaurar no STATE
+      if (dados.reservas)        STATE.reservas        = dados.reservas;
+      if (dados.chamados)        STATE.chamados        = dados.chamados;
+      if (dados.equipamentos)    STATE.equipamentos    = dados.equipamentos;
+      if (dados.users)           STATE.users           = dados.users;
+      if (dados.inventario)      STATE.inventario      = dados.inventario;
+      if (dados.licencas)        STATE.licencas        = dados.licencas;
+      if (dados.acompanhamentos) STATE.acompanhamentos = dados.acompanhamentos;
+      if (dados.compras)         STATE.compras         = dados.compras;
+      if (dados.fornecedores)    STATE.fornecedores    = dados.fornecedores;
+      if (dados.nextId)          STATE.nextId          = dados.nextId;
+      // Enviar tudo para o Firebase
+      if (DB_READY) {
+        toast('Enviando dados para o Firebase...', 'info');
+        const cols = {
+          users: STATE.users, equipamentos: STATE.equipamentos,
+          reservas: STATE.reservas, chamados: STATE.chamados,
+          inventario: STATE.inventario, licencas: STATE.licencas,
+          acompanhamentos: STATE.acompanhamentos, compras: STATE.compras,
+          fornecedores: STATE.fornecedores || [],
+        };
+        for (const [col, lista] of Object.entries(cols)) {
+          for (const item of lista) {
+            const id = item.id || item.usuario || item._id;
+            if (id) await fbSave(col, id, item);
+          }
+        }
+        await fbSaveConfig();
+      }
+      saveState();
+      renderPage(STATE.currentPage);
+      toast('✅ Backup restaurado com sucesso!', 'success');
+    } catch(err) {
+      toast('Erro ao ler o arquivo: ' + err.message, 'error');
+    }
+  };
+  input.click();
+}
+// Backup automático a cada 30 minutos
+function iniciarBackupAutomatico() {
+  setInterval(() => {
+    if (!STATE.currentUser) return;
+    saveState();
+    // Salvar também no IndexedDB via localStorage com timestamp
+    try {
+      localStorage.setItem('miro_backup_auto', JSON.stringify({
+        ts: new Date().toISOString(),
+        reservas: STATE.reservas,
+        chamados: STATE.chamados,
+        equipamentos: STATE.equipamentos,
+        users: STATE.users,
+        inventario: STATE.inventario,
+        licencas: STATE.licencas,
+        acompanhamentos: STATE.acompanhamentos,
+        compras: STATE.compras || [],
+        fornecedores: STATE.fornecedores || [],
+        nextId: STATE.nextId,
+      }));
+    } catch(e) {}
+  }, 30 * 60 * 1000); // 30 minutos
+}
+// ===== AUTOCOMPLETE USUÁRIOS =====
+function showUserSuggest(input, listId) {
+  const val = input.value.toLowerCase();
+  const list = document.getElementById(listId);
+  if (!list) return;
+  if (!val) { list.style.display = 'none'; return; }
+  const matches = STATE.users.filter(u => u.status === 'ativo' && u.nome.toLowerCase().includes(val)).slice(0, 6);
+  if (!matches.length) { list.style.display = 'none'; return; }
+  list.innerHTML = matches.map(u => `
+    <div class="autocomplete-item" onmousedown="event.preventDefault();event.stopPropagation();selectUser('${u.nome}','${input.id}','${listId}')">
+      <div class="autocomplete-avatar">${initials(u.nome)}</div>
+      <div>
+        <div style="font-weight:600;font-size:13px">${u.nome}</div>
+        <div style="font-size:11px;color:var(--gray-400)">${u.unidade||''} · ${u.role==='admin'?'Admin':'Usuário'}</div>
+      </div>
+    </div>`).join('');
+  list.style.display = 'block';
+  const closeHandler = e => {
+    if (!list.contains(e.target) && e.target !== input) {
+      list.style.display = 'none';
+      document.removeEventListener('mousedown', closeHandler);
+    }
+  };
+  document.addEventListener('mousedown', closeHandler);
+}
+function selectUser(nome, inputId, listId) {
+  const input = document.getElementById(inputId);
+  const list  = document.getElementById(listId);
+  if (input) { input.value = nome; input.focus(); }
+  if (list)  list.style.display = 'none';
+}
+// ===== COMPRAS — funções auxiliares =====
+function adicionarItemCompra() {
+  const wrap = document.getElementById('cp-itens-wrap');
+  if (!wrap) return;
+  const idx = wrap.children.length;
+  const div = document.createElement('div');
+  div.className = 'cp-item-row';
+  div.id = 'cpitem-' + idx;
+  div.style.cssText = 'margin-bottom:8px;align-items:center';
+  div.innerHTML =
+    '<input type="text" placeholder="Nome do item" class="cp-item-nome" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>' +
+    '<input type="number" placeholder="Qtd" value="1" min="1" class="cp-item-qtd" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px;text-align:center"/>' +
+    '<input type="number" placeholder="R$ Unit." step="0.01" min="0" class="cp-item-valor" oninput="calcularTotalCompra()" style="padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:6px;font-family:var(--font);font-size:13px"/>' +
+    '<button type="button" class="btn-icon" onclick="this.parentElement.remove();calcularTotalCompra()" style="color:var(--danger)"><i class="ti ti-trash"></i></button>';
+  wrap.appendChild(div);
+}
+function removerItemCompra(idx) {
+  const el = document.getElementById('cpitem-' + idx);
+  if (el) { el.remove(); calcularTotalCompra(); }
+}
+function calcularTotalCompra() {
+  let total = 0;
+  $$('.cp-item-row').forEach(function(row) {
+    const qtd = parseFloat(row.querySelector('.cp-item-qtd') ? row.querySelector('.cp-item-qtd').value : 0) || 0;
+    const val = parseFloat(row.querySelector('.cp-item-valor') ? row.querySelector('.cp-item-valor').value : 0) || 0;
+    total += qtd * val;
+  });
+  const disp = document.getElementById('cp-total-display');
+  const hidden = document.getElementById('cp-valor-total');
+  if (disp) disp.textContent = 'R$ ' + total.toLocaleString('pt-BR', {minimumFractionDigits:2});
+  if (hidden) hidden.value = total;
+}
+Object.assign(window, {
+  // Navegação
+  navigateTo, renderPage, closeModal,
+  // Reservas
+  openModalReserva, openModalReservaData, openModalReservaUnidade,
+  editReserva, salvarReserva, changeReservaStatus, deleteReserva,
+  updateEquipList, checkOutroEquip, toggleOutroSala, changeQty,
+  filtrarResAtivas,
+  // Chamados
+  openModalChamado, openModalChamadoUnidade,
+  editChamado, salvarChamado, changeChamadoStatus, deleteChamado,
+  // Acompanhamentos
+  openModalAcompanhamento, salvarAcompanhamento,
+  // Equipamentos
+  openModalEquipamento, editEquipamento, salvarEquipamento, deleteEquipamento, changeQtyEq,
+  // Inventário
+  openModalInventario, editInventario, salvarInventario, deleteInventario,
+  // Licenças
+  openModalLicenca, editLicenca, salvarLicenca, deleteLicenca,
+  // Usuários
+  openModalUsuario, editUsuario, salvarUsuario, deleteUsuario, toggleUserStatus,
+  // Menu e UI
+  toggleMenu, toggleNavGroup,
+  // Relatórios
+  setRelMode, switchRelatorio, gerarRelatorio, imprimirRelatorio,
+  // Exportar
+  exportarCSV, exportarGeral, exportarReservas, exportarChamados,
+  exportarInventario, exportarLicencas, exportarEquipamentos, toggleExportMenu,
+  // Configurações
+  configuracoes, salvarSLA, alterarSenha,
+  // Autocomplete
+  showUserSuggest, selectUser,
+  // Aulas
+  toggleTodasAulas, sincronizarAulas, atualizarEstiloAulas,
+  toggleHorarioManual, atualizarPreviewHorario,
+  getAulasSelecionadas, getHorarioDasAulas, getLabelAulas,
+  // QR Code
+  abrirQRCode, imprimirQR,
+  // Gráficos
+  renderChartTendencia, gerarDatasRecorrentes,
+  // Calendário
+  openModalReservaData,
+  // Unidades
+  renderUnidadeCharts,
+  // Compras
+  comprasPage, openModalCompra, editCompra, deleteCompra,
+  verCompra, salvarCompra, adicionarItemCompra, removerItemCompra,
+  calcularTotalCompra, filtrarCompras, limparFiltrosCompras,
+  openModalFornecedores, openModalFornecedor, salvarFornecedor, toggleFornecedor,
+  preencherFornecedorCompra, inicializarTotaisCompra, calcTotalCompra,
+  // Backup
+  exportarBackupJSON, importarBackupJSON,
+  // Misc
+  exportarUsuariosCSV,
+  openModalImportacao, baixarTemplateCSV, lerCSVImportacao, executarImportacao,
+  STATE,
+});
+iniciar();
+// ===== EXPOR FUNÇÕES GLOBALMENTE (necessário para módulos ES) =====// onclick no HTML não enxerga funções de módulos sem isso
